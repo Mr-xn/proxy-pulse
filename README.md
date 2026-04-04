@@ -1,103 +1,125 @@
 # ProxyPulse
 
+<div align="center">
+
 **ProxyPulse** — 高可用免费代理池管理器
 
-[Node.js Edition] · 一键启动 · 无需 Python
+High-Availability Free Proxy Pool Manager with Web GUI
+
+[Node.js Edition] · 一键启动 · 无需 Python · One-click Start, No Python Needed
+
+</div>
 
 ---
 
-## 🖥️ Preview
+## 🖥️ Preview | 预览
 
 ![ProxyPulse Screenshot](images/01.png)
 
-## ✨ Features
+---
 
-- **30+ 代理数据源** — 公开 API + 爬虫站点全覆盖
-- **多协议支持** — HTTP / SOCKS4 / SOCKS5
-- **智能验证** — TCP 预检 → 延迟测试 → 匿名度检测 → 速度测速 → 地理位置
-- **IP 轮换** — 手动 / 自动 / 逐请求 三种模式
-- **本地代理服务** — `HTTP:1801` + `SOCKS5:1800`
-- **Web GUI** — 暗色/亮色主题 + 中英双语 + 实时渲染
-- **一键启动** — `npm start` 即可运行
+## ✨ Features | 功能特性
 
-## 🚀 Quick Start
+- **30+ 代理数据源 / Proxy Sources** — 公开 API + 爬虫站点全覆盖
+- **多协议支持 / Multi-Protocol** — HTTP / SOCKS4 / SOCKS5
+- **智能验证 / Smart Validation** — TCP 预检 → 延迟测试 → 匿名度检测 → 速度测速 → 地理位置
+- **IP 轮换 / IP Rotation** — 手动 Manual / 自动 Auto / 逐请求 Per-Request 三种模式
+- **本地代理服务 / Local Proxy Server** — `HTTP:1801` + `SOCKS5:1800`
+- **Web GUI** — 暗色/亮色主题 Dark/Light Theme + 中英双语 i18n + 实时渲染 Real-time Rendering
+- **一键启动 / One-click Start** — `npm start` 即可运行
+
+## 🚀 Quick Start | 快速开始
 
 ```bash
-# 克隆或下载本项目
+# Clone or download | 克隆或下载本项目
+git clone https://github.com/Vogadero/proxy-pulse.git
 cd proxy-pulse
 
-# 安装依赖
+# Install dependencies | 安装依赖
 npm install
 
-# 启动服务
+# Start! | 启动服务
 npm start
 ```
 
-浏览器打开 [http://localhost:3456](http://localhost:3456) 即可使用。
+Open [http://localhost:3456](http://localhost:3456) in your browser. | 浏览器打开即可使用。
 
-### 端口说明
+### Ports | 端口说明
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| Web GUI | `3456` | 管理界面 |
-| HTTP Proxy | `1801` | 本地 HTTP 代理 |
-| SOCKS5 Proxy | `1800` | 本地 SOCKS5 代理 |
+| Service | Port | Description |
+|---------|------|-------------|
+| Web GUI | `3456` | Management Interface / 管理界面 |
+| HTTP Proxy | `1801` | Local HTTP Proxy / 本地 HTTP 代理 |
+| SOCKS5 Proxy | `1800` | Local SOCKS5 Proxy / 本地 SOCKS5 代理 |
 
-## 📖 使用指南
+---
 
-1. 点击 **「获取代理」** — 从 30+ 数据源抓取并验证免费代理
-2. 等待验证完成（TCP 预检 → 全量质量检测），代理列表实时渲染
-3. 点击 **「启动服务」** — 开启本地代理服务器
-4. 将浏览器/软件的代理设置为 `127.0.0.1:1801`（HTTP）或 `127.0.0.1:1800`（SOCKS5）
-5. 使用 **「换IP」** 或 **「自动」** 模式切换代理 IP
+## 📖 Usage Guide | 使用指南
 
-### 工具栏功能
+1. Click **"Fetch Proxies" / 获取代理** — Scrape and validate free proxies from 30+ sources
+2. Wait for validation (TCP pre-check → full quality test), proxies render in real-time
+3. Click **"Start Service / 启动服务"** — Enable the local proxy server
+4. Set browser/software proxy to `127.0.0.1:1801` (HTTP) or `127.0.0.1:1800` (SOCKS5)
+5. Use **"Rotate IP / 换IP"** or **"Auto / 自动"** mode to switch proxy IPs
 
-| 功能 | 说明 |
-|------|------|
-| 获取代理 / 取消任务 | 抓取验证代理，支持中途取消 |
-| 清空列表 | 一键清除当前代理池 |
-| 导入 | 从文本导入自定义代理列表 |
-| 全部重测 | 对已有代理重新进行质量检测 |
-| 导出代理 | 导出可用代理为文本文件 |
-| 换IP | 手动切换到下一个可用代理 |
-| 自动 | 开启自动轮换模式（可设间隔） |
+### Toolbar Functions | 工具栏功能
 
-## 🏗️ 项目结构
+| Button | 功能 | Description |
+|--------|------|-------------|
+| Fetch / Cancel | 获取代理 / 取消任务 | Scrape & validate proxies, supports cancellation |
+| Clear | 清空列表 | Clear current proxy pool |
+| Import | 导入 | Import custom proxy list from text |
+| Re-test All | 全部重测 | Re-validate existing proxies |
+| Export | 导出代理 | Export working proxies to file |
+| Rotate IP | 换IP | Manually switch to next available proxy |
+| Auto | 自动 | Enable auto-rotation mode (configurable interval) |
+
+---
+
+## 🏗️ Project Structure | 项目结构
 
 ```
 proxy-pulse/
-├── app.js              # Express API 服务器（端口 3456）
+├── app.js              # Express API server (port 3456)
 ├── public/
-│   ├── index.html      # Web GUI 页面
-│   ├── app.js          # 前端逻辑（i18n、动画、实时渲染）
-│   └── style.css       # 样式表（CSS 变量主题系统）
+│   ├── index.html      # Web GUI page
+│   ├── app.js          # Frontend logic (i18n, animations, real-time rendering)
+│   └── style.css       # Stylesheet (CSS variables theme system)
 ├── modules/
-│   ├── fetcher.js      # 30+ 数据源抓取器（API + 爬虫）
-│   ├── checker.js      # TCP 预检 + 延迟/匿名度/速度/地理位置检测
-│   ├── rotator.js      # IP 轮换管理器（智能评分）
-│   └── server.js       # 本地代理服务器 HTTP(1801) + SOCKS5(1800)
-├── images/             # 项目截图
-└── package.json        # 项目配置
+│   ├── fetcher.js      # 30+ source scraper (API + cheerio crawler)
+│   ├── checker.js      # TCP pre-check + latency/anonymity/speed/location detection
+│   ├── rotator.js      # IP rotation manager with smart scoring
+│   └── server.js       # Local proxy server HTTP(1801) + SOCKS5(1800)
+├── images/             # Screenshots / 截图
+├── .gitignore          # Git ignore rules
+└── package.json        # Project configuration
 ```
 
-## 🎨 界面特性
+---
 
-- **暗色 / 亮色主题** — 一键切换，自动记忆偏好
-- **中英双语** — 支持中文 / English 切换
-- **实时渲染** — 验证过程中代理列表逐条插入，无需等待全部完成
-- **实时日志** — 右侧日志面板实时输出验证进度和结果
-- **统计面板** — 可用数 / 总数实时更新，带动态效果
-- **响应式工具栏** — 按钮自适应布局，适配不同屏幕宽度
+## 🎨 UI Features | 界面特性
 
-## ⚠️ 免责声明
+- **Dark / Light Theme / 暗色/亮色主题** — One-click toggle, auto-save preference
+- **Bilingual / 中英双语** — Chinese / English switching
+- **Real-time Rendering / 实时渲染** — Proxy list updates row-by-row during validation, no waiting for completion
+- **Live Log / 实时日志** — Right panel shows validation progress and results in real-time
+- **Stats Animation / 统计动画** — Available/Total count updates with dynamic effects
+- **Responsive Toolbar / 响应式工具栏** — Buttons auto-adapt to different screen widths
 
-免费代理本质上不稳定，请勿用于：
-- 传输敏感数据（密码、Token、银行信息等）
-- 生产环境或关键业务
+---
 
+## ⚠️ Disclaimer | 免责声明
+
+Free proxies are unstable by nature. Do NOT use them for:
+- 免费代理本质上不稳定，请勿用于：
+- Transmitting sensitive data (passwords, tokens, banking info) / 传输敏感数据（密码、Token、银行信息等）
+- Production-critical applications / 生产环境或关键业务
+
+For production use, consider paid commercial proxy services.
 生产环境建议使用付费商业代理服务。
+
+---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) | © Vogadero
