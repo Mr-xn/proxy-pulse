@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProxyPulse - Proxy Pool Manager</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<div class="hdr">
+  <div class="hdl">
+    <div class="logo">P</div>
+    <div class="htitle"><span id="lblTitle">ProxyPulse</span><span class="badge">v1.0</span></div>
+  </div>
+  <div class="hdr-r">
+    <div class="spill"><span class="sdot off" id="svDot"></span><span id="svTxt">Offline</span></div>
+    <div class="spill" id="pcItem" style="display:none"><i data-lucide="globe" style="width:14px;height:14px;color:var(--accent)"></i><span id="pcTxt">0/0</span></div>
+    <div class="hctrl">
+      <button class="ibtn" onclick="toggleTheme()" title="Theme"><i data-lucide="moon" id="thIcon"></i></button>
+      <button class="ibtn" onclick="toggleLang()" title="Language"><span id="langLbl" style="font-size:12px;font-weight:700">ZH</span></button>
+      <button class="ibtn" onclick="openHelp()" title="Help"><i data-lucide="book-open"></i></button>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Toolbar -->
+  <div class="toolbar ain">
+    <div class="tg">
+      <button class="btn btn-ok" id="btnFetch" onclick="startFetch()"><i data-lucide="download"></i> <span id="lbFetch">获取代理</span></button>
+      <button class="btn btn-dan" id="btnCancel" onclick="cancelTask()" disabled><i data-lucide="square"></i> <span id="lbCancel">取消任务</span></button>
+      <button class="btn btn-gho" onclick="clearAll()"><i data-lucide="trash-2"></i> <span id="lbClear">清空列表</span></button>
+    </div>
+    <div class="tdiv"></div>
+    <div class="tg">
+      <button class="btn btn-gho" id="btnImport" onclick="importProxies()"><i data-lucide="upload"></i> <span id="lbImport">导入</span></button>
+      <button class="btn btn-agho" id="btnRetest" onclick="revalidateAll()" disabled><i data-lucide="refresh-cw"></i> <span id="lbRetest">全部重测</span></button>
+      <button class="btn btn-pri" id="btnExport" onclick="exportProxies()" disabled><i data-lucide="file-down"></i> <span id="lbExport">导出代理</span></button>
+    </div>
+    <div class="tdiv"></div>
+    <div class="fb">
+      <select id="regionFilter" onchange="refreshTable()"><option value="">全部国家</option></select>
+      <label><input type="checkbox" id="qualityCheck" onchange="refreshTable()"> <span id="lblEliteOnly">仅优质</span></label>
+      <span class="fhint" id="lblLatencyHint">延迟 &lt;</span>
+      <input type="number" id="qualityLatency" value="2000" onchange="refreshTable()" min="100"> <span class="fhint" id="lblMs">ms</span>
+      <button class="btn btn-pri" id="btnRotate" onclick="rotateProxy()" disabled style="margin-left:6px"><i data-lucide="shuffle"></i> <span id="lbRotate">轮换IP</span></button>
+      <button class="btn btn-gho" id="btnAutoRotate" onclick="toggleAutoRotate()" disabled><i data-lucide="zap"></i> <span id="lbAuto">自动</span></button>
+      <input type="number" id="autoInterval" value="10" min="0" style="width:52px;text-align:center"><span class="fhint" id="lblSec">s</span>
+    </div>
+    <div class="tdiv"></div>
+    <div class="tg">
+      <button class="btn btn-ok" id="btnServer" onclick="toggleServer()" disabled><i data-lucide="play" id="bsIcon"></i> <span id="lbStartSrv">启动服务</span></button>
+      <div class="cpbar">
+        <div class="cpdisp" id="curProxyDisp">N/A</div>
+        <span class="sinfo" id="lblPortInfo">SOCKS5:1800 / HTTP:1801</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="pbar-c" id="progC">
+    <div class="pb-t"><div class="pb-f" id="progBar"></div></div>
+    <div class="pb-txt"><span id="progTxt">准备中...</span><span id="progCnt" style="color:var(--accent);font-weight:600"></span></div>
+  </div>
+
+  <!-- Content Grid -->
+  <div class="grid">
+    <!-- Table Panel -->
+    <div class="panel afi" style="animation-delay:.05s">
+      <div class="phdr"><div class="phdr-l"><i data-lucide="database"></i> <span id="lblProxyList">可用代理列表</span></div><span class="ps" id="tblStats"></span></div>
+      <div class="tw">
+        <table><thead><tr><th data-sort="score"><span class="th-label">评分</span></th><th data-sort="anonymity"><span class="th-label">匿名度</span></th><th data-sort="protocol"><span class="th-label">协议</span></th><th data-sort="addr"><span class="th-label">地址</span></th><th data-sort="latency"><span class="th-label">延迟(ms)</span></th><th data-sort="speed"><span class="th-label">速度(KB/s)</span></th><th data-sort="location"><span class="th-label">地区</span></th></tr></thead><tbody id="tblBody"></tbody></table>
+        <div class="empty" id="emptySt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg><div class="etext">暂无代理数据<br/>点击「获取代理」开始采集</div></div>
+      </div>
+    </div>
+
+    <!-- Log Panel -->
+    <div class="panel lpnl afi" style="animation-delay:.1s">
+      <div class="phdr"><div class="phdr-l"><i data-lucide="terminal"></i> <span id="lblLiveLogs">实时日志</span></div></div>
+      <div class="lbody" id="logBody"><div class="le"><span class="lt">[--:--:--]</span><span class="lin">系统就绪，等待操作...</span></div></div>
+      <div class="ltb">
+        <button class="btn btn-gho" onclick="clearLogs()"><i data-lucide="trash-2" style="width:13px;height:13px"></i> <span id="lbClearLog">清空日志</span></button>
+        <button class="btn btn-gho" onclick="scrollLogBot()"><i data-lucide="chevron-down" style="width:13px;height:13px"></i> <span id="lbScrollBot">滚到底部</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div class="ctxm" id="ctxMenu">
+  <div class="ci" onclick="useSelProxy()"><i data-lucide="check-circle"></i> <span>使用此代理</span></div>
+  <div class="csep"></div>
+  <div class="ci" onclick="delSelProxy()"><i data-lucide="trash-2"></i> <span>删除</span></div>
+  <div class="ci" onclick="copyAddr()"><i data-lucide="copy"></i> <span>复制地址</span></div>
+</div>
+
+<!-- Help Modal -->
+<div class="mdov" id="helpModal">
+  <div class="mdlg">
+    <div class="mdhd"><h2><i data-lucide="book-open" style="color:var(--accent)"></i> <span id="lblHelpTitle">使用说明</span></h2><button class="mdcl" onclick="closeHelp()"><i data-lucide="x"></i></button></div>
+    <div class="mdbd" id="helpBody"></div>
+  </div>
+</div>
+
+<div class="tcont" id="toastCont"></div>
+<script src="/app.js"></script>
+</body>
+</html>
