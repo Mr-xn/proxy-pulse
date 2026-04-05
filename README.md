@@ -1,14 +1,8 @@
-# ProxyPulse
-
-<div align="center">
-
-**ProxyPulse** — 高可用免费代理池管理器
-
-High-Availability Free Proxy Pool Manager with Web GUI
-
-[Node.js Edition] · 一键启动 · 无需 Python · One-click Start, No Python Needed
-
-</div>
+<h2 align="center">ProxyPulse</h2>
+<p align="center">
+  <strong>高可用免费代理池管理器</strong><br>
+  <em>[Node.js Edition] · 一键启动 · 无需 Python · One-click Start, No Python Needed</em>
+</p>
 
 ---
 
