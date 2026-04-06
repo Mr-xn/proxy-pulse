@@ -24,6 +24,8 @@
 
 ## 🚀 Quick Start | 快速开始
 
+### Node.js
+
 ```bash
 # Clone or download | 克隆或下载本项目
 git clone https://github.com/Vogadero/proxy-pulse.git
@@ -34,6 +36,48 @@ npm install
 
 # Start! | 启动服务
 npm start
+```
+
+### 🐳 Docker
+
+```bash
+docker run -d \
+  --name proxy-pulse \
+  -p 127.0.0.1:3456:3456 \
+  -p 127.0.0.1:1800:1800 \
+  -p 127.0.0.1:1801:1801 \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  ghcr.io/mr-xn/proxy-pulse:latest
+```
+
+> 可通过 `-e TZ=Asia/Shanghai` 参数修改容器内时区，默认为 `Asia/Shanghai`。  
+> Use `-e TZ=<timezone>` to set the container timezone (e.g. `-e TZ=UTC`).
+
+### 🐳 Docker Compose
+
+```yaml
+services:
+  proxy-pulse:
+    image: ghcr.io/mr-xn/proxy-pulse:latest
+    container_name: proxy-pulse
+    ports:
+      - target: 3456
+        published: 3456
+        host_ip: 127.0.0.1
+      - target: 1800
+        published: 1800
+        host_ip: 127.0.0.1
+      - target: 1801
+        published: 1801
+        host_ip: 127.0.0.1
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+```
+
+```bash
+docker compose up -d
 ```
 
 Open [http://localhost:3456](http://localhost:3456) in your browser. | 浏览器打开即可使用。
