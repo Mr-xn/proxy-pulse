@@ -256,6 +256,10 @@ function isWebAuthEnabled() {
   return !!(state.settings.auth && state.settings.auth.enabled && state.settings.auth.passwordHash);
 }
 
+function isAuthConfigured() {
+  return !!(state.settings.auth && state.settings.auth.passwordHash && state.settings.auth.passwordSalt);
+}
+
 function isAuthenticated(req) {
   if (!isWebAuthEnabled()) return true;
   return validateSession(parseCookies(req).auth_token);
@@ -322,9 +326,8 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/auth/change-password', rateLimitAuth, (req, res) => {
-  const authConfigured = !!(state.settings.auth && state.settings.auth.passwordHash && state.settings.auth.passwordSalt);
-  if (!authConfigured) {
+app.post('/api/auth/change-password', rateLimitAuth, (req, res) => { // rate-limited via rateLimitAuth
+  if (!isAuthConfigured()) {
     return res.status(400).json({ error: '请先通过 /api/auth/setup 设置密码' });
   }
 
