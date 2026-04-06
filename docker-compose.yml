@@ -1,0 +1,9 @@
+services:
+  proxy-pulse:
+    image: ghcr.io/mr-xn/proxy-pulse:latest
+    container_name: proxy-pulse
+    ports:
+      - "3456:3456"
+      - "1800:1800"
+      - "1801:1801"
+    restart: unless-stopped
