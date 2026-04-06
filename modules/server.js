@@ -88,12 +88,79 @@ class ProxyServer extends EventEmitter {
   }
 
   /**
-   * 获取上游代理连接
+   * 获取上游代理信息（含空池回退）
+   */
+  _getUpstreamProxyInfo() {
+    if (this.rotatePerRequest) {
+      return this._rotator.getNextProxy();
+    }
+    // 固定模式：当前代理不可用时自动回退到下一个
+    return this._rotator.getCurrentProxy() || this._rotator.getNextProxy();
+  }
+
+  /**
+   * 通过 HTTP CONNECT 建立到目标的隧道
+   */
+  _connectViaHttpProxy(targetHost, targetPort, proxyHost, proxyPort) {
+    return new Promise((resolve, reject) => {
+      const socket = new net.Socket();
+      socket.setTimeout(10000);
+      let responded = false;
+      let buf = Buffer.alloc(0);
+
+      const onTimeout = () => { socket.destroy(); reject(new Error('ETIMEDOUT')); };
+      socket.on('timeout', onTimeout);
+      socket.on('error', reject);
+
+      socket.connect(proxyPort, proxyHost, () => {
+        socket.write(
+          `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\n` +
+          `Host: ${targetHost}:${targetPort}\r\n` +
+          `Proxy-Connection: Keep-Alive\r\n\r\n`
+        );
+
+        const onData = (chunk) => {
+          if (responded) return;
+          buf = Buffer.concat([buf, chunk]);
+          const eoh = buf.indexOf('\r\n\r\n');
+          if (eoh !== -1) {
+            responded = true;
+            socket.removeListener('data', onData);
+            socket.removeListener('timeout', onTimeout);
+            socket.setTimeout(0);
+            const statusLine = buf.toString('ascii', 0, buf.indexOf('\r\n'));
+            const statusCode = parseInt((statusLine.split(' ')[1] || ''), 10);
+            if (statusCode === 200) {
+              resolve(socket);
+            } else {
+              socket.destroy();
+              reject(new Error(`HTTP CONNECT 失败: ${statusLine}`));
+            }
+          }
+        };
+        socket.on('data', onData);
+      });
+    });
+  }
+
+  /**
+   * 建立到 HTTP 上游代理的普通 TCP 连接（用于转发 HTTP 明文请求）
+   */
+  _tcpConnect(host, port) {
+    return new Promise((resolve, reject) => {
+      const socket = new net.Socket();
+      socket.setTimeout(10000);
+      socket.on('timeout', () => { socket.destroy(); reject(new Error('ETIMEDOUT')); });
+      socket.on('error', reject);
+      socket.connect(port, host, () => { socket.setTimeout(0); resolve(socket); });
+    });
+  }
+
+  /**
+   * 获取上游代理连接（SOCKS4/5 隧道 或 HTTP CONNECT 隧道）
    */
   async _getUpstreamConnection(targetHost, targetPort) {
-    const upstreamProxyInfo = this.rotatePerRequest 
-      ? this._rotator.getNextProxy()
-      : this._rotator.getCurrentProxy();
+    const upstreamProxyInfo = this._getUpstreamProxyInfo();
 
     if (!upstreamProxyInfo) {
       this.log('[!] 代理池为空，无法转发请求。');
@@ -101,40 +168,37 @@ class ProxyServer extends EventEmitter {
     }
 
     const { proxy: addr, protocol } = upstreamProxyInfo;
-    const [upstreamAddr, upstreamPortStr] = addr.split(':');
+    const lastColon = addr.lastIndexOf(':');
+    const upstreamAddr = addr.substring(0, lastColon);
+    const upstreamPort = parseInt(addr.substring(lastColon + 1));
 
     try {
-      let proxyOptions = {
-        proxy: {
-          host: upstreamAddr,
-          port: parseInt(upstreamPortStr),
-          type: 5 // 默认 SOCKS5
-        },
-        destination: {
-          host: targetHost,
-          port: targetPort
-        },
-        command: 'connect',
-        timeout: 10000
-      };
-
-      // 根据协议设置类型
       const protoUpper = protocol.toUpperCase();
+
       if (protoUpper === 'HTTP') {
-        proxyOptions.proxy.type = 5; // HTTP CONNECT 用 SOCKS 方式模拟
-      } else if (protoUpper === 'SOCKS4') {
-        proxyOptions.proxy.type = 4;
+        // HTTP 上游代理：通过 HTTP CONNECT 建立隧道
+        const socket = await this._connectViaHttpProxy(targetHost, targetPort, upstreamAddr, upstreamPort);
+        if (this.rotatePerRequest) {
+          this.log(`轮换: ${addr} -> ${targetHost}:${targetPort}`);
+        }
+        return socket;
       } else {
-        proxyOptions.proxy.type = 5; // SOCKS5
+        // SOCKS4 / SOCKS5 上游代理
+        const info = await SocksClient.createConnection({
+          proxy: {
+            host: upstreamAddr,
+            port: upstreamPort,
+            type: protoUpper === 'SOCKS4' ? 4 : 5
+          },
+          destination: { host: targetHost, port: targetPort },
+          command: 'connect',
+          timeout: 10000
+        });
+        if (this.rotatePerRequest) {
+          this.log(`轮换: ${addr} -> ${targetHost}:${targetPort}`);
+        }
+        return info.socket;
       }
-
-      const info = await SocksClient.createConnection(proxyOptions);
-      
-      if (this.rotatePerRequest) {
-        this.log(`轮换: ${addr} -> ${targetHost}:${targetPort}`);
-      }
-
-      return info.socket;
     } catch (e) {
       this.log(`[!] 上游代理 ${addr} 错误: ${e.message}`);
       return null;
@@ -181,14 +245,51 @@ class ProxyServer extends EventEmitter {
         }
       }
 
-      let targetHost, targetPort;
+      // 获取上游代理信息
+      const upstreamProxyInfo = this._getUpstreamProxyInfo();
+      if (!upstreamProxyInfo) {
+        clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+        clientSocket.end();
+        return;
+      }
+
+      const { proxy: upstreamAddr, protocol: upstreamProtocol } = upstreamProxyInfo;
+      const lastColon = upstreamAddr.lastIndexOf(':');
+      const upstreamHost = upstreamAddr.substring(0, lastColon);
+      const upstreamPort = parseInt(upstreamAddr.substring(lastColon + 1));
+      const isHttpUpstream = upstreamProtocol.toUpperCase() === 'HTTP';
 
       if (method === 'CONNECT') {
-        // HTTPS 隧道模式
-        [targetHost, targetPortStr] = urlStr.split(':');
-        targetPort = parseInt(targetPortStr);
+        // HTTPS 隧道模式：所有上游协议均通过隧道建立
+        const [targetHost, targetPortStr] = urlStr.split(':');
+        const targetPort = parseInt(targetPortStr) || 443;
+
+        try {
+          if (isHttpUpstream) {
+            remoteSocket = await this._connectViaHttpProxy(targetHost, targetPort, upstreamHost, upstreamPort);
+          } else {
+            const socksType = upstreamProtocol.toUpperCase() === 'SOCKS4' ? 4 : 5;
+            const info = await SocksClient.createConnection({
+              proxy: { host: upstreamHost, port: upstreamPort, type: socksType },
+              destination: { host: targetHost, port: targetPort },
+              command: 'connect',
+              timeout: 10000
+            });
+            remoteSocket = info.socket;
+          }
+        } catch (e) {
+          this.log(`[!] 上游代理 ${upstreamAddr} 错误: ${e.message}`);
+          clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+          clientSocket.end();
+          return;
+        }
+
+        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (this.rotatePerRequest) this.log(`轮换: ${upstreamAddr} (CONNECT ${urlStr})`);
+
       } else {
         // 普通 HTTP 请求
+        let targetHost, targetPort;
         let parsed;
         try {
           parsed = new URL(urlStr);
@@ -196,28 +297,40 @@ class ProxyServer extends EventEmitter {
           // 相对路径，尝试从 Host 头获取
           const hostMatch = requestData.toString().match(/Host:\s*([^\r\n]+)/);
           if (hostMatch) {
-            const hostPort = hostMatch[1].split(':');
+            const hostPort = hostMatch[1].trim().split(':');
             targetHost = hostPort[0];
             targetPort = hostPort[1] ? parseInt(hostPort[1]) : 80;
           } else return;
         }
         if (parsed && !targetHost) {
           targetHost = parsed.hostname;
-          targetPort = parsed.port || 80;
+          targetPort = parseInt(parsed.port) || 80;
         }
-      }
 
-      remoteSocket = await this._getUpstreamConnection(targetHost, targetPort);
-      if (!remoteSocket) {
-        clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-        clientSocket.end();
-        return;
-      }
+        try {
+          if (isHttpUpstream) {
+            // HTTP 上游代理：直接建立 TCP 连接并转发完整请求（含绝对 URL）
+            remoteSocket = await this._tcpConnect(upstreamHost, upstreamPort);
+          } else {
+            // SOCKS 上游代理：建立到目标的隧道
+            const socksType = upstreamProtocol.toUpperCase() === 'SOCKS4' ? 4 : 5;
+            const info = await SocksClient.createConnection({
+              proxy: { host: upstreamHost, port: upstreamPort, type: socksType },
+              destination: { host: targetHost, port: targetPort },
+              command: 'connect',
+              timeout: 10000
+            });
+            remoteSocket = info.socket;
+          }
+        } catch (e) {
+          this.log(`[!] 上游代理 ${upstreamAddr} 错误: ${e.message}`);
+          clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+          clientSocket.end();
+          return;
+        }
 
-      if (method === 'CONNECT') {
-        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      } else {
         remoteSocket.write(requestData);
+        if (this.rotatePerRequest) this.log(`轮换: ${upstreamAddr} -> ${targetHost}:${targetPort}`);
       }
 
       this._forwardData(clientSocket, remoteSocket);

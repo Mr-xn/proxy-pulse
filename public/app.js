@@ -95,6 +95,9 @@ const T = {
     // Pool restore
     pool_restored: '已恢复代理池：',
     pool_task_resumed: '任务运行中，正在继续监听...',
+    // 自检
+    test_btn: '自检', test_running: '检测中...', test_ok: '自检通过 出口IP: ', test_fail: '自检失败: ',
+    test_tip: '测试本地代理连通性',
   },
   en: {
     t: 'ProxyPulse',
@@ -189,6 +192,9 @@ const T = {
     // Pool restore
     pool_restored: 'Proxy pool restored: ',
     pool_task_resumed: 'Task is running, resuming listener...',
+    // Self-test
+    test_btn: 'Self-Test', test_running: 'Testing...', test_ok: 'Test passed. Exit IP: ', test_fail: 'Test failed: ',
+    test_tip: 'Test local proxy connectivity',
   }
 };
 
@@ -375,6 +381,8 @@ function updBtns() {
     var sp = ab.querySelector('span');
     if (sp) sp.textContent = S.autoRot ? tr('stop_auto') : tr('auto');
   }
+  var tb = $('btnTest');
+  if (tb) { tb.disabled = !S.server; setTxt('btnTest', tr('test_btn')); }
   var ci = $('pcItem'), ct = $('pcTxt');
   if (ci) ci.style.display = ha ? 'flex' : 'none';
   if (ct) ct.textContent = ha ? wc + '/' + S.proxies.length : '';
@@ -890,6 +898,27 @@ function stopAutoRot(){
   var disp=$('curProxyDisp');
   if(disp)disp.textContent=cp?cp.proxy:'N/A';
   log(tr('log_auto_off'));updBtns();
+}
+
+async function testProxy(){
+  var btn=$('btnTest');
+  if(btn){btn.disabled=true;btn.textContent=tr('test_running');}
+  try{
+    var res=await api('/server/test','GET');
+    if(res&&res.success){
+      log(tr('test_ok')+res.exitIp+' ('+res.latencyMs+'ms) via '+res.upstreamProtocol+'://'+res.upstreamProxy,'ok');
+      showToast(tr('test_ok')+res.exitIp,'ok');
+    }else{
+      var msg=res&&res.error?res.error:'unknown';
+      log(tr('test_fail')+msg,'er');
+      showToast(tr('test_fail')+msg,'er');
+    }
+  }catch(e){
+    log(tr('test_fail')+e.message,'er');
+    showToast(tr('test_fail')+e.message,'er');
+  }finally{
+    if(btn){btn.disabled=!S.server;setTxt('btnTest',tr('test_btn'));}
+  }
 }
 
 async function toggleServer(){

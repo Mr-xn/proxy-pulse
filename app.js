@@ -942,6 +942,49 @@ app.post('/api/server/stop', (req, res) => {
 });
 
 /**
+ * 本地代理自检：通过本地代理访问 httpbin 并返回出口 IP
+ */
+app.get('/api/server/test', async (req, res) => {
+  if (!proxyServer) {
+    return res.json({ success: false, error: '代理服务未启动' });
+  }
+
+  const currentProxy = rotator.getCurrentProxy() || rotator.getNextProxy();
+  if (!currentProxy) {
+    return res.json({ success: false, error: '代理池中无可用代理' });
+  }
+
+  try {
+    const { SocksProxyAgent } = require('socks-proxy-agent');
+    const axios = require('axios');
+
+    // 通过本地 SOCKS5 代理发起测试请求
+    const agent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
+    const startTime = Date.now();
+    const response = await axios.get('https://api.ipify.org?format=json', {
+      httpAgent: agent,
+      httpsAgent: agent,
+      timeout: 15000,
+      validateStatus: () => true
+    });
+    const latencyMs = Date.now() - startTime;
+    const exitIp = (response.data && response.data.ip) ? response.data.ip : String(response.data);
+
+    log(`[自检] 代理连通性测试通过 出口IP: ${exitIp} 延迟: ${latencyMs}ms`, 'success');
+    res.json({
+      success: true,
+      exitIp,
+      latencyMs,
+      upstreamProxy: currentProxy.proxy,
+      upstreamProtocol: currentProxy.protocol
+    });
+  } catch (e) {
+    log(`[自检] 代理连通性测试失败: ${e.message}`, 'error');
+    res.json({ success: false, error: e.message });
+  }
+});
+
+/**
  * 自动轮换控制
  */
 app.post('/api/server/auto-rotate', (req, res) => {
