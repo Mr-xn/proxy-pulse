@@ -53,6 +53,7 @@ class ProxyServer extends EventEmitter {
   }
 
   setRotationMode(perRequest) {
+    if (this.rotatePerRequest === perRequest) return;
     this.rotatePerRequest = perRequest;
     const mode = perRequest ? '逐请求轮换' : '固定当前';
     this.log(`轮换模式切换为: ${mode}`);

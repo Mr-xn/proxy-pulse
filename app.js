@@ -1017,7 +1017,7 @@ app.get('/api/server/test', async (req, res) => {
     log(`[测试] ${testUrl} → HTTP ${statusCode} (${latencyMs}ms) via ${currentProxy.protocol}://${currentProxy.proxy}`, ok ? 'success' : 'warn');
     res.json(result);
   } catch (e) {
-    log(`[测试] ${testUrl} 失败: ${e.message}`, 'error');
+    log(`[测试] ${rawUrl} 失败: ${e.message}`, 'error');
     res.json({ success: false, error: e.message });
   }
 });
@@ -1067,13 +1067,14 @@ app.post('/api/server/auto-rotate', (req, res) => {
     return res.json({ success: false, error: '代理服务未启动' });
   }
 
-  if (enabled) {
-    proxyServer.setRotationMode(intervalSec === 0);
-    res.json({ success: true });
+  if (enabled && intervalSec === 0) {
+    // 逐请求轮换模式：每次代理请求自动切换下一个代理
+    proxyServer.setRotationMode(true);
   } else {
+    // 定时轮换或关闭自动轮换：由前端定时器控制轮换，代理服务使用固定当前模式
     proxyServer.setRotationMode(false);
-    res.json({ success: true });
   }
+  res.json({ success: true });
 });
 
 /**

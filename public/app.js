@@ -766,12 +766,10 @@ async function pollResults() {
       if (!p || !p.proxy) continue;
       if (S.dSet.has(p.proxy)) continue;
       if (p.port === 0 || typeof p.port === 'undefined' || p.port == null) continue;
+      if (p.status !== 'Working') continue;
       S.dSet.add(p.proxy); S.proxies.push(p);
-      // 实时插入表格行（仅Working状态的可代理才显示）
-      if (p.status === 'Working') {
-        appendProxyRow(p);
-        log(tr('log_success')+p.proxy+tr('log_sep')+(p.score||0).toFixed(1)+tr('log_lat')+((p.latency||0)*1000).toFixed(1)+tr('log_ms'),'ok');
-      }
+      appendProxyRow(p);
+      log(tr('log_success')+p.proxy+tr('log_sep')+(p.score||0).toFixed(1)+tr('log_lat')+((p.latency||0)*1000).toFixed(1)+tr('log_ms'),'ok');
     }
     // 实时更新统计数字 + loading效果
     updStats();
@@ -1023,12 +1021,15 @@ async function toggleServer(){
 }
 
 // Log Stream (SSE)
+var _logStreamES=null;
 function startLogStream(){
+  if(_logStreamES){try{_logStreamES.close();}catch(e){}_logStreamES=null;}
   var es=new EventSource('/api/logs/stream');
+  _logStreamES=es;
   es.onmessage=function(ev){
     try{var m=JSON.parse(ev.data);log(m.message,m.level||'normal');}catch(e){log(ev.data);}
   };
-  es.onerror=function(){setTimeout(startLogStream,3000);};
+  es.onerror=function(){try{es.close();}catch(e){}_logStreamES=null;setTimeout(startLogStream,3000);};
 }
 
 // Help Modal
