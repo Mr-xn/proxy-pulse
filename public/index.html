@@ -21,6 +21,7 @@
     <div class="hctrl">
       <button class="ibtn" onclick="toggleTheme()" title="Theme"><i data-lucide="moon" id="thIcon"></i></button>
       <button class="ibtn" onclick="toggleLang()" title="Language"><span id="langLbl" style="font-size:12px;font-weight:700">ZH</span></button>
+      <button class="ibtn" onclick="openSettings()" title="Settings" id="btnSettings"><i data-lucide="settings"></i></button>
       <button class="ibtn" onclick="openHelp()" title="Help"><i data-lucide="book-open"></i></button>
     </div>
   </div>
@@ -107,6 +108,67 @@
   <div class="mdlg">
     <div class="mdhd"><h2><i data-lucide="book-open" style="color:var(--accent)"></i> <span id="lblHelpTitle">使用说明</span></h2><button class="mdcl" onclick="closeHelp()"><i data-lucide="x"></i></button></div>
     <div class="mdbd" id="helpBody"></div>
+  </div>
+</div>
+
+<!-- Auth Overlay (Login / Setup) -->
+<div class="auth-ov" id="authOverlay">
+  <div class="auth-card">
+    <div class="auth-logo">P</div>
+    <div class="auth-title" id="authTitle">ProxyPulse</div>
+    <div class="auth-sub" id="authSub"></div>
+    <form id="authForm" onsubmit="submitAuth(event)">
+      <div class="auth-field" id="authCurrentPwField" style="display:none">
+        <label id="authCurrentPwLabel"></label>
+        <input type="password" id="authCurrentPw" autocomplete="current-password" placeholder="••••••">
+      </div>
+      <div class="auth-field">
+        <label id="authPwLabel"></label>
+        <input type="password" id="authPw" autocomplete="new-password" placeholder="••••••">
+      </div>
+      <div class="auth-field" id="authConfirmField" style="display:none">
+        <label id="authConfirmLabel"></label>
+        <input type="password" id="authConfirmPw" autocomplete="new-password" placeholder="••••••">
+      </div>
+      <div class="auth-err" id="authErr"></div>
+      <button class="btn btn-pri" type="submit" id="authBtn" style="width:100%;justify-content:center;margin-top:4px"></button>
+    </form>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="mdov" id="settingsModal">
+  <div class="mdlg" style="max-width:540px">
+    <div class="mdhd"><h2><i data-lucide="settings" style="color:var(--accent)"></i> <span id="lblSettingsTitle">设置</span></h2><button class="mdcl" onclick="closeSettings()"><i data-lucide="x"></i></button></div>
+    <div class="mdbd" id="settingsBody">
+      <!-- General -->
+      <h3><i data-lucide="sliders-horizontal" style="color:var(--accent)"></i> <span id="lblSettingsGeneral">通用设置</span></h3>
+      <div class="sf-row"><label id="lblThreads">验证线程数</label><input type="number" id="stThreads" min="1" max="500" style="width:90px"></div>
+      <div class="sf-row"><label id="lblFailThr">失败阈值（次）</label><input type="number" id="stFailThr" min="1" max="20" style="width:90px"></div>
+
+      <!-- Web Auth -->
+      <h3><i data-lucide="shield" style="color:var(--accent)"></i> <span id="lblSettingsAuth">Web 面板认证</span></h3>
+      <div class="sf-row"><label id="lblAuthEnable">启用密码保护</label><input type="checkbox" id="stAuthEnabled" style="width:auto"></div>
+      <div id="stAuthPwSection">
+        <div class="sf-row"><label id="lblCurPw">当前密码</label><input type="password" id="stCurPw" autocomplete="current-password" placeholder="••••••" style="flex:1;min-width:0"></div>
+        <div class="sf-row"><label id="lblNewPw">新密码（留空不改）</label><input type="password" id="stNewPw" autocomplete="new-password" placeholder="••••••" style="flex:1;min-width:0"></div>
+        <div class="sf-row"><label id="lblCfmPw">确认新密码</label><input type="password" id="stCfmPw" autocomplete="new-password" placeholder="••••••" style="flex:1;min-width:0"></div>
+      </div>
+
+      <!-- Proxy Auth -->
+      <h3><i data-lucide="lock" style="color:var(--accent)"></i> <span id="lblSettingsProxyAuth">本地代理认证</span></h3>
+      <div class="sf-row"><label id="lblProxyAuthEnable">启用代理认证</label><input type="checkbox" id="stProxyAuthEnabled" style="width:auto" onchange="toggleProxyAuthFields()"></div>
+      <div id="stProxyAuthFields" style="display:none">
+        <div class="sf-row"><label id="lblProxyUser">用户名</label><input type="text" id="stProxyUser" autocomplete="off" style="flex:1;min-width:0"></div>
+        <div class="sf-row"><label id="lblProxyPw">密码（留空不改）</label><input type="password" id="stProxyPw" autocomplete="new-password" style="flex:1;min-width:0"></div>
+      </div>
+
+      <div class="auth-err" id="settingsErr" style="margin-top:10px"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="btn btn-gho" onclick="closeSettings()" id="btnSettingsCancel">取消</button>
+        <button class="btn btn-pri" onclick="saveSettings()" id="btnSettingsSave">保存</button>
+      </div>
+    </div>
   </div>
 </div>
 

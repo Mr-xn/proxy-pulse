@@ -77,6 +77,21 @@ const T = {
     import_fail: '导入失败',
     ms: 'ms', sec_hint: 's',
     port_info: 'SOCKS5:1800 / HTTP:1801',
+    // Auth
+    auth_setup_title: '设置访问密码', auth_setup_sub: '首次使用，请设置一个登录密码来保护您的控制面板。',
+    auth_login_title: '登录', auth_login_sub: '请输入密码以访问 ProxyPulse 控制面板。',
+    auth_pw_label: '密码', auth_confirm_label: '确认密码', auth_btn_setup: '设置密码',
+    auth_btn_login: '登录', auth_err_short: '密码至少需要6位', auth_err_mismatch: '两次密码不一致',
+    auth_err_wrong: '密码错误', auth_logout: '退出登录',
+    // Settings
+    settings_title: '设置', settings_general: '通用设置', settings_auth: 'Web 面板认证',
+    settings_proxy_auth: '本地代理认证', settings_threads: '验证线程数', settings_fail_thr: '失败阈值（次）',
+    settings_auth_enable: '启用密码保护', settings_cur_pw: '当前密码', settings_new_pw: '新密码（留空不改）',
+    settings_cfm_pw: '确认新密码', settings_proxy_auth_enable: '启用代理认证', settings_proxy_user: '用户名',
+    settings_proxy_pw: '密码（留空不改）', settings_cancel: '取消', settings_save: '保存',
+    settings_saved: '设置已保存', settings_pw_changed: '密码已更新，请重新登录',
+    settings_err_cur_pw: '当前密码错误', settings_err_short: '密码至少需要6位',
+    settings_err_mismatch: '两次密码不一致',
   },
   en: {
     t: 'ProxyPulse',
@@ -153,6 +168,21 @@ const T = {
     import_fail: 'Import failed',
     ms: 'ms', sec_hint: 's',
     port_info: 'SOCKS5:1800 / HTTP:1801',
+    // Auth
+    auth_setup_title: 'Set Dashboard Password', auth_setup_sub: 'First run: set a password to protect your dashboard.',
+    auth_login_title: 'Login', auth_login_sub: 'Enter your password to access ProxyPulse.',
+    auth_pw_label: 'Password', auth_confirm_label: 'Confirm Password', auth_btn_setup: 'Set Password',
+    auth_btn_login: 'Login', auth_err_short: 'Password must be at least 6 characters', auth_err_mismatch: 'Passwords do not match',
+    auth_err_wrong: 'Incorrect password', auth_logout: 'Logout',
+    // Settings
+    settings_title: 'Settings', settings_general: 'General', settings_auth: 'Dashboard Auth',
+    settings_proxy_auth: 'Local Proxy Auth', settings_threads: 'Validation Threads', settings_fail_thr: 'Failure Threshold',
+    settings_auth_enable: 'Enable Password Protection', settings_cur_pw: 'Current Password', settings_new_pw: 'New Password (blank = no change)',
+    settings_cfm_pw: 'Confirm New Password', settings_proxy_auth_enable: 'Enable Proxy Auth', settings_proxy_user: 'Username',
+    settings_proxy_pw: 'Password (blank = no change)', settings_cancel: 'Cancel', settings_save: 'Save',
+    settings_saved: 'Settings saved', settings_pw_changed: 'Password updated, please login again',
+    settings_err_cur_pw: 'Current password is incorrect', settings_err_short: 'Password must be at least 6 characters',
+    settings_err_mismatch: 'Passwords do not match',
   }
 };
 
@@ -213,6 +243,8 @@ function applyT() {
   // 排除上下文菜单标签（动态，showCtx时更新）
   // Help Modal
   renderHelp();
+  // Settings Modal
+  applySettingsT();
 }
 
 // 安全设置文本
@@ -245,7 +277,9 @@ async function api(p, m, b) {
   try {
     var o = { method: m, headers: { 'Content-Type': 'application/json' } };
     if (b) o.body = JSON.stringify(b);
-    return await (await fetch('/api' + p, o)).json();
+    var resp = await fetch('/api' + p, o);
+    if (resp.status === 401) { checkAuth(); return null; }
+    return await resp.json();
   } catch (e) { log('API Error: ' + e.message, 'er'); return null; }
  }
 
@@ -868,6 +902,172 @@ function renderHelp(){
   lucide.createIcons({root:hb,attrs:{strokeWidth:1.5}});
 }
 
+// ==================== Auth ====================
+var authMode = 'login'; // 'setup' | 'login'
+
+async function checkAuth() {
+  var res = await fetch('/api/auth/status').then(function(r){return r.json();}).catch(function(){return null;});
+  if (!res) return;
+  if (!res.authenticated) {
+    authMode = res.hasPassword ? 'login' : 'setup';
+    showAuthOverlay(authMode);
+  } else {
+    var ov = $('authOverlay'); if (ov) ov.classList.remove('act');
+  }
+}
+
+function showAuthOverlay(mode) {
+  authMode = mode;
+  var ov = $('authOverlay');
+  if (!ov) return;
+  ov.classList.add('act');
+  var isSetup = mode === 'setup';
+  setTxt('authTitle', isSetup ? tr('auth_setup_title') : tr('auth_login_title'));
+  setTxt('authSub', isSetup ? tr('auth_setup_sub') : tr('auth_login_sub'));
+  setTxt('authPwLabel', tr('auth_pw_label'));
+  setTxt('authConfirmLabel', tr('auth_confirm_label'));
+  setTxt('authBtn', isSetup ? tr('auth_btn_setup') : tr('auth_btn_login'));
+  var cf = $('authConfirmField'); if (cf) cf.style.display = isSetup ? '' : 'none';
+  var err = $('authErr'); if (err) err.textContent = '';
+  var pw = $('authPw'); if (pw) { pw.value = ''; pw.focus(); }
+  var cpw = $('authConfirmPw'); if (cpw) cpw.value = '';
+}
+
+async function submitAuth(e) {
+  if (e) e.preventDefault();
+  var pw = $('authPw') ? $('authPw').value : '';
+  var err = $('authErr');
+  if (err) err.textContent = '';
+  if (!pw || pw.length < 6) { if (err) err.textContent = tr('auth_err_short'); return; }
+  if (authMode === 'setup') {
+    var cpw = $('authConfirmPw') ? $('authConfirmPw').value : '';
+    if (pw !== cpw) { if (err) err.textContent = tr('auth_err_mismatch'); return; }
+    var res = await fetch('/api/auth/setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})}).then(function(r){return r.json();}).catch(function(){return null;});
+    if (res && res.success) { var ov=$('authOverlay');if(ov)ov.classList.remove('act'); }
+    else if (res && res.error) { if (err) err.textContent = res.error; }
+  } else {
+    var res2 = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})}).then(function(r){return r.json();}).catch(function(){return null;});
+    if (res2 && res2.success) { var ov2=$('authOverlay');if(ov2)ov2.classList.remove('act'); }
+    else { if (err) err.textContent = tr('auth_err_wrong'); }
+  }
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  showAuthOverlay('login');
+}
+
+// ==================== Settings Modal ====================
+function openSettings() {
+  api('/settings/get').then(function(res) {
+    if (!res || !res.settings) return;
+    var s = res.settings;
+    if (s.general) {
+      var th = $('stThreads'); if (th) th.value = s.general.validationThreads || 100;
+      var ft = $('stFailThr'); if (ft) ft.value = s.general.failureThreshold || 3;
+    }
+    if (s.auth) {
+      var ae = $('stAuthEnabled'); if (ae) ae.checked = !!s.auth.enabled;
+    }
+    if (s.proxyAuth) {
+      var pe = $('stProxyAuthEnabled'); if (pe) pe.checked = !!s.proxyAuth.enabled;
+      var pu = $('stProxyUser'); if (pu) pu.value = s.proxyAuth.username || '';
+      toggleProxyAuthFields();
+    }
+    var spw = $('stCurPw'); if (spw) spw.value = '';
+    var npw = $('stNewPw'); if (npw) npw.value = '';
+    var cpw = $('stCfmPw'); if (cpw) cpw.value = '';
+    var ppw = $('stProxyPw'); if (ppw) ppw.value = '';
+    var se = $('settingsErr'); if (se) se.textContent = '';
+  });
+  applySettingsT();
+  var m = $('settingsModal'); if (m) m.classList.add('act');
+}
+
+function closeSettings() { var m = $('settingsModal'); if (m) m.classList.remove('act'); }
+
+function toggleProxyAuthFields() {
+  var cb = $('stProxyAuthEnabled'), f = $('stProxyAuthFields');
+  if (f) f.style.display = (cb && cb.checked) ? '' : 'none';
+}
+
+function applySettingsT() {
+  var d = T[lang];
+  setTxt('lblSettingsTitle', d.settings_title);
+  setTxt('lblSettingsGeneral', d.settings_general);
+  setTxt('lblSettingsAuth', d.settings_auth);
+  setTxt('lblSettingsProxyAuth', d.settings_proxy_auth);
+  setTxt('lblThreads', d.settings_threads);
+  setTxt('lblFailThr', d.settings_fail_thr);
+  setTxt('lblAuthEnable', d.settings_auth_enable);
+  setTxt('lblCurPw', d.settings_cur_pw);
+  setTxt('lblNewPw', d.settings_new_pw);
+  setTxt('lblCfmPw', d.settings_cfm_pw);
+  setTxt('lblProxyAuthEnable', d.settings_proxy_auth_enable);
+  setTxt('lblProxyUser', d.settings_proxy_user);
+  setTxt('lblProxyPw', d.settings_proxy_pw);
+  setTxt('btnSettingsCancel', d.settings_cancel);
+  setTxt('btnSettingsSave', d.settings_save);
+}
+
+async function saveSettings() {
+  var se = $('settingsErr'); if (se) se.textContent = '';
+  var threads = $('stThreads') ? parseInt($('stThreads').value) || 100 : 100;
+  var failThr = $('stFailThr') ? parseInt($('stFailThr').value) || 3 : 3;
+  var authEnabled = $('stAuthEnabled') ? $('stAuthEnabled').checked : false;
+  var curPw = $('stCurPw') ? $('stCurPw').value : '';
+  var newPw = $('stNewPw') ? $('stNewPw').value : '';
+  var cfmPw = $('stCfmPw') ? $('stCfmPw').value : '';
+  var proxyAuthEnabled = $('stProxyAuthEnabled') ? $('stProxyAuthEnabled').checked : false;
+  var proxyUser = $('stProxyUser') ? $('stProxyUser').value.trim() : 'proxy';
+  var proxyPw = $('stProxyPw') ? $('stProxyPw').value : '';
+
+  // Validate password fields
+  if (newPw) {
+    if (newPw.length < 6) { if (se) se.textContent = tr('settings_err_short'); return; }
+    if (newPw !== cfmPw) { if (se) se.textContent = tr('settings_err_mismatch'); return; }
+  }
+
+  // Save general + proxyAuth settings
+  var settingsPayload = {
+    general: { validationThreads: threads, failureThreshold: failThr },
+    proxyAuth: { enabled: proxyAuthEnabled, username: proxyUser || 'proxy' }
+  };
+  if (proxyPw) settingsPayload.proxyAuth.password = proxyPw;
+
+  var r1 = await api('/settings/save', 'POST', { settings: settingsPayload });
+  if (!r1) return;
+
+  // Change web auth password if requested
+  if (newPw) {
+    var r2 = await fetch('/api/auth/change-password', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:curPw,newPassword:newPw})}).then(function(r){return r.json();}).catch(function(){return null;});
+    if (!r2 || !r2.success) { if (se) se.textContent = r2 && r2.error ? r2.error : tr('settings_err_cur_pw'); return; }
+    // Password changed - re-login needed
+    closeSettings();
+    showToast(tr('settings_pw_changed'), 'wa');
+    showAuthOverlay('login');
+    return;
+  }
+
+  // Update auth enabled state if changed (toggle without password change)
+  if (!newPw && authEnabled !== (S.settings.auth && S.settings.auth.enabled)) {
+    if (!authEnabled) {
+      // Disabling auth - save the flag (requires current password if was enabled)
+      if (S.settings.auth && S.settings.auth.hasPassword) {
+        if (!curPw) { if (se) se.textContent = tr('settings_cur_pw') + ': ' + tr('auth_err_short'); return; }
+        var r3 = await fetch('/api/auth/change-password', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:curPw,newPassword:newPw||curPw})}).then(function(r){return r.json();}).catch(function(){return null;});
+        if (!r3 || !r3.success) { if (se) se.textContent = tr('settings_err_cur_pw'); return; }
+      }
+    }
+  }
+
+  S.settings.general = { validationThreads: threads, failureThreshold: failThr };
+  if (!S.settings.auth) S.settings.auth = {};
+  S.settings.auth.enabled = authEnabled;
+  closeSettings();
+  showToast(tr('settings_saved'), 'ok');
+}
+
 // Init
 window.onload=function(){
   lucide.createIcons({attrs:{strokeWidth:1.5}});
@@ -876,6 +1076,7 @@ window.onload=function(){
   if(ti&&theme==='light')ti.setAttribute('data-lucide','sun');
   lucide.createIcons({attrs:{strokeWidth:1.5}});
   applyT();
+  checkAuth();
   startLogStream();
   api('/settings/get').then(function(res){if(res&&res.settings)S.settings=res.settings;});
   api('/proxy/exclusions').then(function(res){if(res&&res.excluded){S.excludedSet=new Set(res.excluded);updExclBadge();}});
@@ -886,3 +1087,5 @@ window.onload=function(){
 // Close modal on overlay click
 var hm=$('helpModal');
 if(hm)hm.addEventListener('click',function(e){if(e.target===this)closeHelp();});
+var sm=$('settingsModal');
+if(sm)sm.addEventListener('click',function(e){if(e.target===this)closeSettings();});
