@@ -942,11 +942,31 @@ app.post('/api/server/stop', (req, res) => {
 });
 
 /**
- * 本地代理自检：通过本地代理访问 httpbin 并返回出口 IP
+ * 本地代理连通性测试：通过本地 SOCKS5 代理请求指定 URL
  */
+// 允许的测试 URL 白名单（同时允许通过 SSRF 检查的任意 URL）
+const SSRF_PRIVATE_RE = /^(localhost$|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0$|::1$|fc[0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i;
+
 app.get('/api/server/test', async (req, res) => {
   if (!proxyServer) {
     return res.json({ success: false, error: '代理服务未启动' });
+  }
+
+  const rawUrl = (req.query.url || 'https://api.ipify.org?format=json').trim();
+
+  // 校验 URL 安全性：只允许 http/https，禁止内网/保留地址（防 SSRF）
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.json({ success: false, error: '仅支持 http/https 协议' });
+    }
+    const hostname = parsedUrl.hostname.toLowerCase();
+    if (SSRF_PRIVATE_RE.test(hostname)) {
+      return res.json({ success: false, error: '不允许测试内网或保留地址' });
+    }
+  } catch (e) {
+    return res.json({ success: false, error: '无效的测试 URL' });
   }
 
   const currentProxy = rotator.getCurrentProxy() || rotator.getNextProxy();
@@ -958,30 +978,81 @@ app.get('/api/server/test', async (req, res) => {
     const { SocksProxyAgent } = require('socks-proxy-agent');
     const axios = require('axios');
 
-    // 通过本地 SOCKS5 代理发起测试请求
     const agent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
     const startTime = Date.now();
-    const response = await axios.get('https://api.ipify.org?format=json', {
+    // testUrl is a validated, non-private HTTP/HTTPS URL
+    const testUrl = parsedUrl.toString();
+    const response = await axios.get(testUrl, {
       httpAgent: agent,
       httpsAgent: agent,
       timeout: 15000,
-      validateStatus: () => true
+      validateStatus: () => true,
+      responseType: 'text',
+      maxRedirects: 5
     });
     const latencyMs = Date.now() - startTime;
-    const exitIp = (response.data && response.data.ip) ? response.data.ip : String(response.data);
+    const statusCode = response.status;
+    const ok = statusCode >= 200 && statusCode < 300;
 
-    log(`[自检] 代理连通性测试通过 出口IP: ${exitIp} 延迟: ${latencyMs}ms`, 'success');
-    res.json({
-      success: true,
-      exitIp,
+    // 尝试提取出口 IP（仅当响应为 JSON 且含 ip 字段时，如 ipify）
+    let exitIp = null;
+    try {
+      const parsed = JSON.parse(response.data);
+      if (parsed && typeof parsed.ip === 'string' && /^[\d.a-fA-F:]+$/.test(parsed.ip)) {
+        exitIp = parsed.ip;
+      }
+    } catch (_) {}
+
+    const result = {
+      success: ok,
+      statusCode,
       latencyMs,
+      exitIp,
       upstreamProxy: currentProxy.proxy,
       upstreamProtocol: currentProxy.protocol
-    });
+    };
+
+    log(`[测试] ${testUrl} → HTTP ${statusCode} (${latencyMs}ms) via ${currentProxy.protocol}://${currentProxy.proxy}`, ok ? 'success' : 'warn');
+    res.json(result);
   } catch (e) {
-    log(`[自检] 代理连通性测试失败: ${e.message}`, 'error');
+    log(`[测试] ${testUrl} 失败: ${e.message}`, 'error');
     res.json({ success: false, error: e.message });
   }
+});
+
+/**
+ * 重启本地代理服务
+ */
+app.post('/api/server/restart', (req, res) => {
+  if (proxyServer) {
+    proxyServer.stopAll();
+    proxyServer = null;
+  }
+
+  if (rotator.getActiveProxiesCount() === 0) {
+    return res.json({ success: false, error: '代理池中无可用代理' });
+  }
+
+  if (!rotator.getCurrentProxy()) {
+    rotator.getNextProxy();
+  }
+
+  const ac = state.settings.proxyAuth;
+  const authConfig = (ac && ac.enabled && ac.passwordHash)
+    ? { enabled: true, username: ac.username || 'proxy', passwordHash: ac.passwordHash, passwordSalt: ac.passwordSalt }
+    : { enabled: false };
+
+  proxyServer = new ProxyServer(
+    '127.0.0.1', HTTP_PROXY_PORT,
+    '127.0.0.1', SOCKS5_PROXY_PORT,
+    rotator,
+    authConfig
+  );
+  proxyServer.on('log', msg => log(msg));
+  proxyServer.startAll();
+
+  log('代理服务已重启', 'info');
+  res.json({ success: true, httpPort: HTTP_PROXY_PORT, socks5Port: SOCKS5_PROXY_PORT });
 });
 
 /**

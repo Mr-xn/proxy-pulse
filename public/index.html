@@ -57,7 +57,8 @@
     <div class="tdiv"></div>
     <div class="tg">
       <button class="btn btn-ok" id="btnServer" onclick="toggleServer()" disabled><i data-lucide="play" id="bsIcon"></i> <span id="lbStartSrv">启动服务</span></button>
-      <button class="btn btn-gho" id="btnTest" onclick="testProxy()" disabled title="测试本地代理连通性"><i data-lucide="activity"></i> <span>自检</span></button>
+      <button class="btn btn-warn" id="btnRestart" onclick="restartServer()" disabled title="重启代理服务"><i data-lucide="rotate-cw"></i> <span id="lbRestart">重启</span></button>
+      <button class="btn btn-gho" id="btnTest" onclick="testProxy()" disabled title="测试本地代理连通性"><i data-lucide="activity"></i> <span id="lbTest">自检</span></button>
       <div class="cpbar">
         <div class="cpdisp" id="curProxyDisp">N/A</div>
         <span class="sinfo" id="lblPortInfo">SOCKS5:1800 / HTTP:1801</span>
@@ -173,6 +174,34 @@
         <button class="btn btn-gho" onclick="closeSettings()" id="btnSettingsCancel">取消</button>
         <button class="btn btn-pri" onclick="saveSettings()" id="btnSettingsSave">保存</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Proxy Test Modal -->
+<div class="mdov" id="testModal">
+  <div class="mdlg" style="max-width:500px">
+    <div class="mdhd"><h2><i data-lucide="activity" style="color:var(--accent)"></i> <span id="lblTestTitle">代理连通性测试</span></h2><button class="mdcl" onclick="closeTestModal()"><i data-lucide="x"></i></button></div>
+    <div class="mdbd">
+      <div class="sf-row" style="align-items:flex-start;flex-direction:column;gap:6px">
+        <label id="lblTestUrl" style="font-size:13px;font-weight:600">测试 URL</label>
+        <select id="testUrlPreset" onchange="onTestUrlPresetChange()" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px">
+          <option value="https://www.google.com/generate_204">Google generate_204 (期望 204)</option>
+          <option value="https://www.gstatic.com/generate_204">Gstatic generate_204 (期望 204)</option>
+          <option value="https://www.apple.com/library/test/success.html">Apple success.html (期望 200)</option>
+          <option value="http://www.msftconnecttest.com/connecttest.txt">MSFT connecttest.txt (期望 200)</option>
+          <option value="https://api.ipify.org?format=json">ipify — 查出口IP (期望 200)</option>
+          <option value="custom" id="optCustom">自定义...</option>
+        </select>
+        <div id="testUrlCustomWrap" style="display:none;width:100%">
+          <input type="text" id="testUrlCustom" placeholder="https://..." style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ok" id="testRunBtn" onclick="runProxyTest()"><i data-lucide="play"></i> <span id="lbTestRun">开始测试</span></button>
+        <button class="btn btn-gho" onclick="closeTestModal()"><span id="lbTestClose">关闭</span></button>
+      </div>
+      <div id="testResult" style="margin-top:14px;font-size:13px;line-height:1.7;word-break:break-all"></div>
     </div>
   </div>
 </div>

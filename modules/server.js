@@ -7,6 +7,20 @@ const crypto = require('crypto');
 const { SocksClient } = require('socks');
 const EventEmitter = require('events');
 
+/**
+ * 解析 "host:port" 格式的代理地址，支持 IPv4 和 IPv6（[::1]:8080）
+ * @returns {{ host: string, port: number }|null}
+ */
+function parseProxyAddress(addr) {
+  if (!addr || typeof addr !== 'string') return null;
+  const lastColon = addr.lastIndexOf(':');
+  if (lastColon <= 0) return null;
+  const host = addr.substring(0, lastColon);
+  const port = parseInt(addr.substring(lastColon + 1), 10);
+  if (isNaN(port) || port < 1 || port > 65535) return null;
+  return { host, port };
+}
+
 class ProxyServer extends EventEmitter {
   constructor(httpHost, httpPort, socks5Host, socks5Port, rotator, authConfig) {
     super();
@@ -168,9 +182,12 @@ class ProxyServer extends EventEmitter {
     }
 
     const { proxy: addr, protocol } = upstreamProxyInfo;
-    const lastColon = addr.lastIndexOf(':');
-    const upstreamAddr = addr.substring(0, lastColon);
-    const upstreamPort = parseInt(addr.substring(lastColon + 1));
+    const parsed = parseProxyAddress(addr);
+    if (!parsed) {
+      this.log(`[!] 上游代理地址格式无效: ${addr}`);
+      return null;
+    }
+    const { host: upstreamAddr, port: upstreamPort } = parsed;
 
     try {
       const protoUpper = protocol.toUpperCase();
@@ -254,9 +271,14 @@ class ProxyServer extends EventEmitter {
       }
 
       const { proxy: upstreamAddr, protocol: upstreamProtocol } = upstreamProxyInfo;
-      const lastColon = upstreamAddr.lastIndexOf(':');
-      const upstreamHost = upstreamAddr.substring(0, lastColon);
-      const upstreamPort = parseInt(upstreamAddr.substring(lastColon + 1));
+      const parsedUpstream = parseProxyAddress(upstreamAddr);
+      if (!parsedUpstream) {
+        clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+        clientSocket.end();
+        return;
+      }
+      const upstreamHost = parsedUpstream.host;
+      const upstreamPort = parsedUpstream.port;
       const isHttpUpstream = upstreamProtocol.toUpperCase() === 'HTTP';
 
       if (method === 'CONNECT') {
