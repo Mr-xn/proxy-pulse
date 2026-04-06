@@ -386,7 +386,7 @@ function refreshTable() {
       var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
       var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
       row.innerHTML =
-        '<td class="chk-cell"><input type="checkbox" ' + (isSel ? 'checked' : '') + ' onclick="toggleRowSel(event,\'' + esc(p.proxy) + '\')"></td>' +
+        '<td class="chk-cell"><input type="checkbox" ' + (isSel ? 'checked' : '') + '></td>' +
         '<td style="font-weight:700;color:' + (p.status === 'Working' ? 'var(--accent)' : 'var(--t3)') + '">' + sc + '</td>' +
         '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
         '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
@@ -394,6 +394,8 @@ function refreshTable() {
         '<td>' + lt + '</td><td>' + sp + '</td>' +
         '<td>' + esc(p.location || '-') + '</td>';
       row.dataset.addr = p.proxy;
+      var cb = row.querySelector('input[type=checkbox]');
+      if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
       row.ondblclick = function() { copySingle(p.proxy); };
       row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
       tb.appendChild(row);
@@ -633,7 +635,7 @@ function appendProxyRow(p) {
   var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
   var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
   row.innerHTML =
-    '<td class="chk-cell"><input type="checkbox" onclick="toggleRowSel(event,\'' + esc(p.proxy) + '\')"></td>' +
+    '<td class="chk-cell"><input type="checkbox"></td>' +
     '<td style="font-weight:700;color:var(--accent)">' + sc + '</td>' +
     '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
     '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
@@ -641,6 +643,8 @@ function appendProxyRow(p) {
     '<td>' + lt + '</td><td>' + sp + '</td>' +
     '<td>' + esc(p.location || '-') + '</td>';
   row.dataset.addr = p.proxy;
+  var cb = row.querySelector('input[type=checkbox]');
+  if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
   row.ondblclick = function() { copySingle(p.proxy); };
   row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
   tb.insertBefore(row, tb.firstChild);
