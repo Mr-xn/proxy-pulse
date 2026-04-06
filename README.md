@@ -21,6 +21,7 @@
 - **本地代理服务 / Local Proxy Server** — `HTTP:1801` + `SOCKS5:1800`
 - **Web GUI** — 暗色/亮色主题 Dark/Light Theme + 中英双语 i18n + 实时渲染 Real-time Rendering
 - **一键启动 / One-click Start** — `npm start` 即可运行
+- **数据持久化 / Data Persistence** — 代理池与配置持久化，重启不丢数据
 
 ## 🚀 Quick Start | 快速开始
 
@@ -47,12 +48,16 @@ docker run -d \
   -p 127.0.0.1:1800:1800 \
   -p 127.0.0.1:1801:1801 \
   -e TZ=Asia/Shanghai \
+  -v proxy-pulse-data:/data \
   --restart unless-stopped \
   ghcr.io/mr-xn/proxy-pulse:latest
 ```
 
 > 可通过 `-e TZ=Asia/Shanghai` 参数修改容器内时区，默认为 `Asia/Shanghai`。  
 > Use `-e TZ=<timezone>` to set the container timezone (e.g. `-e TZ=UTC`).
+>
+> `-v proxy-pulse-data:/data` 将代理池和配置文件持久化到 Docker 命名卷，容器升级重建后数据不丢失。  
+> `-v proxy-pulse-data:/data` mounts a named volume at `/data` so proxy pool and settings survive container upgrades.
 
 ### 🐳 Docker Compose
 
@@ -73,7 +78,12 @@ services:
         host_ip: 127.0.0.1
     environment:
       - TZ=Asia/Shanghai
+    volumes:
+      - proxy-pulse-data:/data
     restart: unless-stopped
+
+volumes:
+  proxy-pulse-data:
 ```
 
 ```bash
@@ -82,6 +92,12 @@ docker compose up -d
 
 Open [http://localhost:3456](http://localhost:3456) in your browser. | 浏览器打开即可使用。
 
+> 也可以用宿主机目录代替命名卷实现挂载，例如：  
+> You can also bind-mount a host directory instead of a named volume:
+> ```bash
+> -v /your/host/path:/data
+> ```
+
 ### Ports | 端口说明
 
 | Service | Port | Description |
@@ -89,6 +105,27 @@ Open [http://localhost:3456](http://localhost:3456) in your browser. | 浏览器
 | Web GUI | `3456` | Management Interface / 管理界面 |
 | HTTP Proxy | `1801` | Local HTTP Proxy / 本地 HTTP 代理 |
 | SOCKS5 Proxy | `1800` | Local SOCKS5 Proxy / 本地 SOCKS5 代理 |
+
+---
+
+## 💾 Data Persistence | 数据持久化
+
+程序运行时会在数据目录下写入以下文件：
+
+| 文件 | 说明 |
+|------|------|
+| `pool.json` | 代理池快照（代理列表 + 排除列表） |
+| `config.json` | 应用设置（验证线程数、Web 认证、代理认证等） |
+
+**数据目录**由环境变量 `DATA_DIR` 指定：
+
+| 运行方式 | 默认数据目录 |
+|----------|------------|
+| Node.js 直接运行 | 项目根目录（`app.js` 所在位置） |
+| Docker / Docker Compose | `/data`（需挂载持久化卷） |
+
+Docker 中挂载卷后，升级镜像或重建容器不会丢失代理池和设置。  
+When running in Docker, mount a volume to `/data` to keep proxy pool and settings across container upgrades.
 
 ---
 
@@ -114,6 +151,117 @@ Open [http://localhost:3456](http://localhost:3456) in your browser. | 浏览器
 
 ---
 
+## 🔐 Web GUI Authentication | Web 界面认证
+
+Web 管理界面支持密码保护，防止未授权访问。默认不启用，设置密码后自动生效。  
+The Web GUI supports optional password protection. It is disabled by default and activates once a password is set.
+
+### 设置密码 / Set Password
+
+首次启动后，通过以下 API 设置密码（密码至少 6 位）：  
+After first startup, set a password via the API (minimum 6 characters):
+
+```bash
+curl -X POST http://localhost:3456/api/auth/setup \
+  -H "Content-Type: application/json" \
+  -d '{"password": "yourpassword"}'
+```
+
+密码设置后，所有 `/api/*` 接口（除登录/登出）均需登录后才能访问。  
+After setting the password, all `/api/*` endpoints (except login/logout) require authentication.
+
+### 登录 / Login
+
+```bash
+curl -X POST http://localhost:3456/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"password": "yourpassword"}' \
+  -c cookies.txt
+```
+
+登录成功后会返回 `Set-Cookie: auth_token=...`，后续请求携带该 Cookie 即可。  
+On success a `Set-Cookie: auth_token=...` header is returned; include it in subsequent requests.
+
+### 修改密码 / Change Password
+
+```bash
+curl -X POST http://localhost:3456/api/auth/change-password \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"currentPassword": "oldpass", "newPassword": "newpass"}'
+```
+
+### 登出 / Logout
+
+```bash
+curl -X POST http://localhost:3456/api/auth/logout -b cookies.txt
+```
+
+### Web 认证 API 一览 / Auth API Reference
+
+| Method | Path | 说明 |
+|--------|------|------|
+| `GET` | `/api/auth/status` | 查询认证状态（是否已设置密码、当前是否已登录） |
+| `POST` | `/api/auth/setup` | 首次设置密码 `{ "password": "..." }` |
+| `POST` | `/api/auth/login` | 登录 `{ "password": "..." }` |
+| `POST` | `/api/auth/logout` | 登出，清除 Cookie |
+| `POST` | `/api/auth/change-password` | 修改密码 `{ "currentPassword": "...", "newPassword": "..." }` |
+
+> 登录接口有频率限制：15 分钟内最多尝试 10 次，超限后需等待窗口重置。  
+> Login endpoints are rate-limited: max 10 attempts per 15-minute window per IP.
+
+---
+
+## 🔑 Local Proxy Authentication | 本地代理认证
+
+本地 HTTP / SOCKS5 代理服务支持用户名/密码认证，防止局域网内未授权使用。  
+The local HTTP/SOCKS5 proxy server supports username/password authentication to restrict access.
+
+### 启用代理认证 / Enable Proxy Auth
+
+在 Web 界面 **Settings / 设置** 页面中，开启 **Proxy Auth / 代理认证** 并填写用户名和密码后保存即可。  
+也可以通过 API 直接设置：  
+You can also configure it via the API:
+
+```bash
+curl -X POST http://localhost:3456/api/settings/save \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "settings": {
+      "proxyAuth": {
+        "enabled": true,
+        "username": "proxyuser",
+        "password": "proxypassword"
+      }
+    }
+  }'
+```
+
+> `username` 默认为 `proxy`。密码在服务端以 scrypt 哈希存储，不保存明文。  
+> Default username is `proxy`. Passwords are stored as scrypt hashes; plaintext is never saved.
+
+### 使用带认证的代理 / Using Authenticated Proxy
+
+```bash
+# HTTP 代理
+curl -x http://proxyuser:proxypassword@127.0.0.1:1801 https://example.com
+
+# SOCKS5 代理
+curl --socks5 127.0.0.1:1800 -U proxyuser:proxypassword https://example.com
+```
+
+### 禁用代理认证 / Disable Proxy Auth
+
+```bash
+curl -X POST http://localhost:3456/api/settings/save \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"settings": {"proxyAuth": {"enabled": false}}}'
+```
+
+---
+
 ## 🏗️ Project Structure | 项目结构
 
 ```
@@ -132,6 +280,9 @@ proxy-pulse/
 ├── .gitignore          # Git ignore rules
 └── package.json        # Project configuration
 ```
+
+> 运行时数据文件（`pool.json`、`config.json`、`temp/`）写入 `DATA_DIR` 指定的目录，不在项目源码目录中（Docker 环境下为 `/data`）。  
+> Runtime data files (`pool.json`, `config.json`, `temp/`) are written to the directory specified by `DATA_DIR` (defaults to `/data` in Docker).
 
 ---
 

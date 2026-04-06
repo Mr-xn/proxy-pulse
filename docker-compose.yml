@@ -12,4 +12,9 @@ services:
       - target: 1801
         published: 1801
         host_ip: 127.0.0.1
+    volumes:
+      - proxy-pulse-data:/data
     restart: unless-stopped
+
+volumes:
+  proxy-pulse-data:
