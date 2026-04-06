@@ -867,7 +867,7 @@ app.post('/api/settings/save', (req, res) => {
     if (settings.proxyAuth) {
       // Hash proxy password if provided
       if (settings.proxyAuth.password) {
-        const salt = randomHex(16);
+        const salt = randomHex(32);
         settings.proxyAuth.passwordHash = hashPassword(settings.proxyAuth.password, salt);
         settings.proxyAuth.passwordSalt = salt;
       }

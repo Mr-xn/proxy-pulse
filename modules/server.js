@@ -163,10 +163,17 @@ class ProxyServer extends EventEmitter {
           clientSocket.end();
           return;
         }
-        const decoded = Buffer.from(authMatch[1].trim(), 'base64').toString();
-        const colonIdx = decoded.indexOf(':');
-        const user = colonIdx >= 0 ? decoded.slice(0, colonIdx) : decoded;
-        const pass = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : '';
+        let user = '', pass = '';
+        try {
+          const decoded = Buffer.from(authMatch[1].trim(), 'base64').toString();
+          const colonIdx = decoded.indexOf(':');
+          user = colonIdx >= 0 ? decoded.slice(0, colonIdx) : decoded;
+          pass = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : '';
+        } catch (e) {
+          clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="ProxyPulse"\r\nContent-Length: 0\r\nProxy-Connection: close\r\n\r\n');
+          clientSocket.end();
+          return;
+        }
         if (!this._checkProxyAuth(user, pass)) {
           clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="ProxyPulse"\r\nContent-Length: 0\r\nProxy-Connection: close\r\n\r\n');
           clientSocket.end();

@@ -279,6 +279,7 @@ async function api(p, m, b) {
     if (b) o.body = JSON.stringify(b);
     var resp = await fetch('/api' + p, o);
     if (resp.status === 401) { checkAuth(); return null; }
+    if (!resp.ok && resp.status >= 400) { try { return await resp.json(); } catch(e) { return null; } }
     return await resp.json();
   } catch (e) { log('API Error: ' + e.message, 'er'); return null; }
  }
@@ -966,9 +967,6 @@ function openSettings() {
       var th = $('stThreads'); if (th) th.value = s.general.validationThreads || 100;
       var ft = $('stFailThr'); if (ft) ft.value = s.general.failureThreshold || 3;
     }
-    if (s.auth) {
-      var ae = $('stAuthEnabled'); if (ae) ae.checked = !!s.auth.enabled;
-    }
     if (s.proxyAuth) {
       var pe = $('stProxyAuthEnabled'); if (pe) pe.checked = !!s.proxyAuth.enabled;
       var pu = $('stProxyUser'); if (pu) pu.value = s.proxyAuth.username || '';
@@ -999,7 +997,6 @@ function applySettingsT() {
   setTxt('lblSettingsProxyAuth', d.settings_proxy_auth);
   setTxt('lblThreads', d.settings_threads);
   setTxt('lblFailThr', d.settings_fail_thr);
-  setTxt('lblAuthEnable', d.settings_auth_enable);
   setTxt('lblCurPw', d.settings_cur_pw);
   setTxt('lblNewPw', d.settings_new_pw);
   setTxt('lblCfmPw', d.settings_cfm_pw);
@@ -1014,7 +1011,6 @@ async function saveSettings() {
   var se = $('settingsErr'); if (se) se.textContent = '';
   var threads = $('stThreads') ? parseInt($('stThreads').value) || 100 : 100;
   var failThr = $('stFailThr') ? parseInt($('stFailThr').value) || 3 : 3;
-  var authEnabled = $('stAuthEnabled') ? $('stAuthEnabled').checked : false;
   var curPw = $('stCurPw') ? $('stCurPw').value : '';
   var newPw = $('stNewPw') ? $('stNewPw').value : '';
   var cfmPw = $('stCfmPw') ? $('stCfmPw').value : '';
@@ -1022,7 +1018,7 @@ async function saveSettings() {
   var proxyUser = $('stProxyUser') ? $('stProxyUser').value.trim() : 'proxy';
   var proxyPw = $('stProxyPw') ? $('stProxyPw').value : '';
 
-  // Validate password fields
+  // Validate password change fields
   if (newPw) {
     if (newPw.length < 6) { if (se) se.textContent = tr('settings_err_short'); return; }
     if (newPw !== cfmPw) { if (se) se.textContent = tr('settings_err_mismatch'); return; }
@@ -1042,28 +1038,13 @@ async function saveSettings() {
   if (newPw) {
     var r2 = await fetch('/api/auth/change-password', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:curPw,newPassword:newPw})}).then(function(r){return r.json();}).catch(function(){return null;});
     if (!r2 || !r2.success) { if (se) se.textContent = r2 && r2.error ? r2.error : tr('settings_err_cur_pw'); return; }
-    // Password changed - re-login needed
     closeSettings();
     showToast(tr('settings_pw_changed'), 'wa');
     showAuthOverlay('login');
     return;
   }
 
-  // Update auth enabled state if changed (toggle without password change)
-  if (!newPw && authEnabled !== (S.settings.auth && S.settings.auth.enabled)) {
-    if (!authEnabled) {
-      // Disabling auth - save the flag (requires current password if was enabled)
-      if (S.settings.auth && S.settings.auth.hasPassword) {
-        if (!curPw) { if (se) se.textContent = tr('settings_cur_pw') + ': ' + tr('auth_err_short'); return; }
-        var r3 = await fetch('/api/auth/change-password', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:curPw,newPassword:newPw||curPw})}).then(function(r){return r.json();}).catch(function(){return null;});
-        if (!r3 || !r3.success) { if (se) se.textContent = tr('settings_err_cur_pw'); return; }
-      }
-    }
-  }
-
   S.settings.general = { validationThreads: threads, failureThreshold: failThr };
-  if (!S.settings.auth) S.settings.auth = {};
-  S.settings.auth.enabled = authEnabled;
   closeSettings();
   showToast(tr('settings_saved'), 'ok');
 }
