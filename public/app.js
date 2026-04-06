@@ -95,6 +95,20 @@ const T = {
     // Pool restore
     pool_restored: '已恢复代理池：',
     pool_task_resumed: '任务运行中，正在继续监听...',
+    // 自检
+    test_btn: '自检', test_running: '检测中...', test_ok: '自检通过 出口IP: ', test_fail: '自检失败: ',
+    test_tip: '测试本地代理连通性',
+    // 代理测试弹窗
+    test_modal_title: '代理连通性测试',
+    test_url_label: '测试 URL',
+    test_url_custom: '自定义...',
+    test_url_custom_placeholder: 'https://...',
+    test_run: '开始测试', test_cancel: '关闭',
+    test_res_ok: '✅ 连通 | HTTP ', test_res_fail: '❌ 失败: ',
+    test_res_lat: ' | 延迟: ', test_res_ip: ' | 出口IP: ',
+    test_res_via: ' | 上游: ',
+    // 重启服务
+    restart_btn: '重启', restart_ok: '代理服务已重启', restart_fail: '重启失败: ',
   },
   en: {
     t: 'ProxyPulse',
@@ -189,6 +203,20 @@ const T = {
     // Pool restore
     pool_restored: 'Proxy pool restored: ',
     pool_task_resumed: 'Task is running, resuming listener...',
+    // Self-test
+    test_btn: 'Test', test_running: 'Testing...', test_ok: 'Test passed. Exit IP: ', test_fail: 'Test failed: ',
+    test_tip: 'Test local proxy connectivity',
+    // Test modal
+    test_modal_title: 'Proxy Connectivity Test',
+    test_url_label: 'Test URL',
+    test_url_custom: 'Custom...',
+    test_url_custom_placeholder: 'https://...',
+    test_run: 'Run Test', test_cancel: 'Close',
+    test_res_ok: '✅ OK | HTTP ', test_res_fail: '❌ Failed: ',
+    test_res_lat: ' | Latency: ', test_res_ip: ' | Exit IP: ',
+    test_res_via: ' | Via: ',
+    // Restart
+    restart_btn: 'Restart', restart_ok: 'Proxy service restarted', restart_fail: 'Restart failed: ',
   }
 };
 
@@ -205,13 +233,22 @@ function applyT() {
   var d = T[lang];
   // Header
   setTxt('lblTitle', d.t);
-  setTxt('svTxt', d.off);
+  setTxt('svTxt', S.server ? d.on : d.off);
   // 工具栏按钮
   setTxt('lbFetch', d.fch); setTxt('lbImport', d.imp);
   setTxt('lbCancel', d.can); setTxt('lbClear', d.clr);
   setTxt('lbRetest', d.ret); setTxt('lbExport', d.exp);
   setTxt('lbExclSel', d.excl_sel); setTxt('lbExclClr', d.excl_clr);
   setTxt('lbStartSrv', d.ssrv);
+  setTxt('lbRestart', d.restart_btn);
+  setTxt('lbTest', d.test_btn);
+  // 代理测试弹窗
+  setTxt('lblTestTitle', d.test_modal_title);
+  setTxt('lblTestUrl', d.test_url_label);
+  setTxt('lbTestRun', d.test_run);
+  setTxt('lbTestClose', d.test_cancel);
+  var optC = $('optCustom'); if(optC) optC.textContent = d.test_url_custom;
+  var ci = $('testUrlCustom'); if(ci) ci.placeholder = d.test_url_custom_placeholder;
   // 过滤区
   setTxt('lblEliteOnly', d.el);
   setTxt('lblLatencyHint', d.la);
@@ -375,6 +412,10 @@ function updBtns() {
     var sp = ab.querySelector('span');
     if (sp) sp.textContent = S.autoRot ? tr('stop_auto') : tr('auto');
   }
+  var tb = $('btnTest');
+  if (tb) tb.disabled = !S.server;
+  var rb = $('btnRestart');
+  if (rb) rb.disabled = !S.server;
   var ci = $('pcItem'), ct = $('pcTxt');
   if (ci) ci.style.display = ha ? 'flex' : 'none';
   if (ct) ct.textContent = ha ? wc + '/' + S.proxies.length : '';
@@ -880,16 +921,84 @@ async function toggleAutoRotate(){
   }
   updBtns();
 }
+function syncCurProxyDisp(){
+  var cp=S.proxies.find(function(p){return p.status==='Working';});
+  var disp=$('curProxyDisp');
+  if(disp)disp.textContent=cp?cp.proxy:'N/A';
+}
+
 function doAutoRot(iv){if(!S.autoRot||iv<=0)return;S.autoTimer=setTimeout(function(){rotateProxy().then(function(){doAutoRot(iv);});},iv*1000);}
 function stopAutoRot(){
   S.autoRot=false;
   if(S.autoTimer)clearTimeout(S.autoTimer);
   S.autoTimer=null;
   api('/server/auto-rotate','POST',{enabled:false});
-  var cp=S.proxies.find(function(p){return p.status==='Working';});
-  var disp=$('curProxyDisp');
-  if(disp)disp.textContent=cp?cp.proxy:'N/A';
+  syncCurProxyDisp();
   log(tr('log_auto_off'));updBtns();
+}
+
+function testProxy(){openTestModal();}
+
+function openTestModal(){
+  var m=$('testModal');if(m){m.classList.add('act');lucide.createIcons({attrs:{strokeWidth:1.5}});}
+}
+function closeTestModal(){var m=$('testModal');if(m)m.classList.remove('act');}
+
+function onTestUrlPresetChange(){
+  var sel=$('testUrlPreset'),cw=$('testUrlCustomWrap');
+  if(!sel||!cw)return;
+  cw.style.display=sel.value==='custom'?'block':'none';
+}
+
+async function runProxyTest(){
+  var sel=$('testUrlPreset'),ci=$('testUrlCustom');
+  var url=sel&&sel.value!=='custom'?sel.value:(ci?ci.value.trim():'');
+  if(!url){return;}
+  var rb=$('testRunBtn');if(rb)rb.disabled=true;
+  var rd=$('testResult');
+  if(rd){rd.textContent='';var si=document.createElement('span');si.style.opacity='.6';si.textContent=tr('test_running');rd.appendChild(si);}
+  try{
+    var res=await api('/server/test?url='+encodeURIComponent(url),'GET');
+    if(rd){
+      rd.textContent='';
+      var sp=document.createElement('span');
+      if(res&&res.success){
+        sp.style.color='var(--ok)';
+        var msg=tr('test_res_ok')+String(res.statusCode||'')+tr('test_res_lat')+String(res.latencyMs||0)+'ms';
+        if(res.exitIp)msg+=tr('test_res_ip')+String(res.exitIp);
+        if(res.upstreamProxy)msg+=tr('test_res_via')+String(res.upstreamProtocol||'')+'://'+String(res.upstreamProxy);
+        sp.textContent=msg;
+      }else{
+        sp.style.color='var(--err)';
+        sp.textContent=tr('test_res_fail')+(res&&res.error?String(res.error):'unknown');
+      }
+      rd.appendChild(sp);
+    }
+  }catch(e){
+    if(rd){rd.textContent='';var se=document.createElement('span');se.style.color='var(--err)';se.textContent=tr('test_res_fail')+e.message;rd.appendChild(se);}
+  }finally{
+    if(rb)rb.disabled=false;
+  }
+}
+
+async function restartServer(){
+  var btn=$('btnRestart');if(btn)btn.disabled=true;
+  try{
+    var res=await api('/server/restart','POST');
+    if(res&&res.success){
+      S.server=true;
+      var dot=$('svDot');if(dot)dot.className='sdot on';
+      setTxt('svTxt',tr('on'));
+      log(tr('restart_ok'),'ok');
+      showToast(tr('restart_ok'),'ok');
+    }else{
+      showToast(tr('restart_fail')+(res&&res.error||''),'er');
+    }
+  }catch(e){
+    showToast(tr('restart_fail')+e.message,'er');
+  }finally{
+    updBtns();
+  }
 }
 
 async function toggleServer(){
@@ -1158,12 +1267,20 @@ window.onload=function(){
     }
   });
   api('/status').then(function(res){
+    if(res&&res.serverRunning){
+      S.server=true;
+      var dot=$('svDot');if(dot)dot.className='sdot on';
+      setTxt('svTxt',tr('on'));
+    }
     if(res&&res.isRunningTask&&!S.running){
       S.running=true; S.cancel.cancelled=false;
       setBtn(false); showProg(res.progress?res.progress.max:0);
       log(tr('pool_task_resumed'),'in');
       pollResults();
     }
+    // 恢复当前代理显示
+    if(res&&res.serverRunning) syncCurProxyDisp();
+    updBtns();
   });
   log(tr('log_loaded'),'ok');
   log(tr('ltip'),'in');
@@ -1174,3 +1291,5 @@ var hm=$('helpModal');
 if(hm)hm.addEventListener('click',function(e){if(e.target===this)closeHelp();});
 var sm=$('settingsModal');
 if(sm)sm.addEventListener('click',function(e){if(e.target===this)closeSettings();});
+var tm=$('testModal');
+if(tm)tm.addEventListener('click',function(e){if(e.target===this)closeTestModal();});
