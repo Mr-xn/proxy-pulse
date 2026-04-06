@@ -1065,7 +1065,8 @@ app.listen(PORT, () => {
   // 恢复代理池缓存
   loadPool();
 
-  // 创建 temp 目录
+  // 创建数据目录（DATA_DIR 及 temp 子目录）
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const tempDir = path.join(DATA_DIR, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 });
