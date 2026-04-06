@@ -1011,16 +1011,16 @@ app.get('/api/server/test', async (req, res) => {
 
     // 根据上游代理协议选择合适的代理 Agent
     const protocol = (currentProxy.protocol || 'SOCKS5').toUpperCase();
-    let httpAgent, httpsAgent;
-    if (protocol === 'HTTP') {
-      const httpProxyUrl = `http://127.0.0.1:${HTTP_PROXY_PORT}`;
-      httpAgent = new HttpProxyAgent(httpProxyUrl);
-      httpsAgent = new HttpsProxyAgent(httpProxyUrl);
-    } else {
+    function createTestAgents() {
+      if (protocol === 'HTTP') {
+        const httpProxyUrl = `http://127.0.0.1:${HTTP_PROXY_PORT}`;
+        return { httpAgent: new HttpProxyAgent(httpProxyUrl), httpsAgent: new HttpsProxyAgent(httpProxyUrl) };
+      }
       const socksAgent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
-      httpAgent = socksAgent;
-      httpsAgent = socksAgent;
+      return { httpAgent: socksAgent, httpsAgent: socksAgent };
     }
+
+    const { httpAgent, httpsAgent } = createTestAgents();
 
     const startTime = Date.now();
     // testUrl is a validated, non-private HTTP/HTTPS URL
@@ -1059,19 +1059,10 @@ app.get('/api/server/test', async (req, res) => {
     if (ok) {
       const verifyUrl = SELF_CHECK_URLS[Math.floor(Math.random() * SELF_CHECK_URLS.length)];
       try {
-        let vHttpAgent, vHttpsAgent;
-        if (protocol === 'HTTP') {
-          const httpProxyUrl = `http://127.0.0.1:${HTTP_PROXY_PORT}`;
-          vHttpAgent = new HttpProxyAgent(httpProxyUrl);
-          vHttpsAgent = new HttpsProxyAgent(httpProxyUrl);
-        } else {
-          const vSocksAgent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
-          vHttpAgent = vSocksAgent;
-          vHttpsAgent = vSocksAgent;
-        }
+        const vAgents = createTestAgents();
         const verifyRes = await axios.get(verifyUrl, {
-          httpAgent: vHttpAgent,
-          httpsAgent: vHttpsAgent,
+          httpAgent: vAgents.httpAgent,
+          httpsAgent: vAgents.httpsAgent,
           timeout: 10000,
           validateStatus: () => true,
           responseType: 'text',
@@ -1089,7 +1080,6 @@ app.get('/api/server/test', async (req, res) => {
         log(`[测试] 二次验证 ${verifyUrl} → HTTP ${vStatus}`, vOk ? 'success' : 'warn');
       } catch (vErr) {
         result.success = false;
-        result.verifyUrl = verifyUrl;
         result.verifyOk = false;
         result.verifyError = `二次验证失败: ${vErr.message}`;
         log(`[测试] 二次验证 ${verifyUrl} 失败: ${vErr.message}`, 'warn');
