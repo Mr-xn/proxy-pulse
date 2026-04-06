@@ -965,10 +965,12 @@ async function runProxyTest(){
         var msg=tr('test_res_ok')+String(res.statusCode||'')+tr('test_res_lat')+String(res.latencyMs||0)+'ms';
         if(res.exitIp)msg+=tr('test_res_ip')+String(res.exitIp);
         if(res.upstreamProxy)msg+=tr('test_res_via')+String(res.upstreamProtocol||'')+'://'+String(res.upstreamProxy);
+        if(res.verifyUrl)msg+=' | ✅ '+res.verifyUrl;
         sp.textContent=msg;
       }else{
         sp.style.color='var(--err)';
-        sp.textContent=tr('test_res_fail')+(res&&res.error?String(res.error):'unknown');
+        var errMsg=(res&&res.verifyError)?String(res.verifyError):(res&&res.error?String(res.error):'unknown');
+        sp.textContent=tr('test_res_fail')+errMsg;
       }
       rd.appendChild(sp);
     }
@@ -1001,6 +1003,12 @@ async function restartServer(){
 
 async function toggleServer(){
   if(S.server){
+    // 停止服务时一并停止自动轮换
+    if(S.autoRot){
+      S.autoRot=false;
+      if(S.autoTimer)clearTimeout(S.autoTimer);
+      S.autoTimer=null;
+    }
     var res=await api('/server/stop','POST');
     if(res&&res.success){
       S.server=false;
@@ -1014,6 +1022,12 @@ async function toggleServer(){
       S.server=true;
       var dot=$('svDot');if(dot)dot.className='sdot on';
       setTxt('svTxt',tr('on'));
+      // 显示启动时自动选取的代理
+      if(res2.currentProxy){
+        var disp=$('curProxyDisp');
+        if(disp)disp.textContent=res2.currentProxy.proxy;
+        log(tr('lrot')+res2.currentProxy.protocol+'://'+res2.currentProxy.proxy,'ok');
+      }
       log(tr('lsrvc'),'ok');updBtns();
       showToast(tr('service_started'),'ok');
     }else{showToast(res2&&res2.error||tr('start_failed'),'er');}
