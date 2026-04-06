@@ -3,7 +3,13 @@ services:
     image: ghcr.io/mr-xn/proxy-pulse:latest
     container_name: proxy-pulse
     ports:
-      - "3456:3456"
-      - "1800:1800"
-      - "1801:1801"
+      - target: 3456
+        published: 3456
+        host_ip: 127.0.0.1
+      - target: 1800
+        published: 1800
+        host_ip: 127.0.0.1
+      - target: 1801
+        published: 1801
+        host_ip: 127.0.0.1
     restart: unless-stopped
