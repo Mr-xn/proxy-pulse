@@ -27,7 +27,8 @@ const app = express();
 const PORT = process.env.PORT || 3456;
 const HTTP_PROXY_PORT = 1801;
 const SOCKS5_PROXY_PORT = 1800;
-const POOL_FILE = path.join(__dirname, 'pool.json');
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const POOL_FILE = path.join(DATA_DIR, 'pool.json');
 
 // 中间件
 app.use(express.json({ limit: '50mb' }));
@@ -38,7 +39,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // 文件上传配置 (用于导入代理)
 const upload = multer({
-  dest: path.join(__dirname, 'temp'),
+  dest: path.join(DATA_DIR, 'temp'),
   limits: { fileSize: 10 * 1024 * 1024 } // 最大 10MB
 });
 
@@ -81,7 +82,7 @@ const state = {
 // ==================== Config ====================
 function loadConfig() {
   try {
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = path.join(DATA_DIR, 'config.json');
     if (fs.existsSync(configPath)) {
       const saved = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (saved.general) Object.assign(state.settings.general, saved.general);
@@ -94,7 +95,7 @@ function loadConfig() {
 function saveConfig() {
   try {
     fs.writeFileSync(
-      path.join(__dirname, 'config.json'),
+      path.join(DATA_DIR, 'config.json'),
       JSON.stringify(state.settings, null, 2),
       'utf-8'
     );
@@ -966,7 +967,7 @@ app.post('/api/server/auto-rotate', (req, res) => {
 app.get('/api/settings/get', (req, res) => {
   // 尝试从文件加载设置
   try {
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = path.join(DATA_DIR, 'config.json');
     if (fs.existsSync(configPath)) {
       const saved = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (saved.general) Object.assign(state.settings.general, saved.general);
@@ -1064,7 +1065,8 @@ app.listen(PORT, () => {
   // 恢复代理池缓存
   loadPool();
 
-  // 创建 temp 目录
-  const tempDir = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+  // 创建数据目录（DATA_DIR 及 temp 子目录）
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tempDir = path.join(DATA_DIR, 'temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 });
