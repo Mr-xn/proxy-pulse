@@ -53,6 +53,11 @@ class ProxyFetcher {
       ]
     };
 
+    // 混合协议源（包含协议前缀的代理列表）
+    this.mixedSources = [
+      'https://github.com/proxifly/free-proxy-list/raw/refs/heads/main/proxies/all/data.txt',
+    ];
+
     // 爬虫源（需要解析 HTML 的网站）
     this.scrapingSources = [
       { func: this._scrapeFreeProxyList.bind(this), protocol: 'http' },
@@ -235,6 +240,44 @@ class ProxyFetcher {
     }
   }
 
+  /**
+   * 从包含协议前缀的混合列表获取代理
+   * 格式如: http://1.2.3.4:8080, socks4://1.2.3.4:1080, socks5://1.2.3.4:1080
+   */
+  async _fetchMixedSource(url, logFn) {
+    const displayUrl = url.split('/')[2];
+    logFn(`[*] (API) Fetching mixed source from ${displayUrl}...`);
+    try {
+      const response = await this.session.get(url);
+      const result = { http: [], socks4: [], socks5: [] };
+      const ipPortPattern = /^((?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)){3}):(\d{1,5})$/;
+      const lines = String(response.data).split('\n').map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        const stripped = line.replace(/^(https?|socks[45]):\/\//i, '').split(/[\s,;]/)[0];
+        const match = stripped.match(ipPortPattern);
+        if (!match) continue;
+        const port = parseInt(match[2], 10);
+        if (port < 1 || port > 65535) continue;
+        const proxy = `${match[1]}:${match[2]}`;
+        if (/^socks5:\/\//i.test(line)) {
+          result.socks5.push(proxy);
+        } else if (/^socks4:\/\//i.test(line)) {
+          result.socks4.push(proxy);
+        } else if (/^https?:\/\//i.test(line)) {
+          result.http.push(proxy);
+        } else {
+          logFn(`[~] (API) ${displayUrl}: skipping unknown-protocol line: ${line.slice(0, 50)}`);
+        }
+      }
+      const total = result.http.length + result.socks4.length + result.socks5.length;
+      logFn(`[+] (API) ${displayUrl}: ${total} proxies (http:${result.http.length} socks4:${result.socks4.length} socks5:${result.socks5.length})`);
+      return total > 0 ? result : null;
+    } catch (e) {
+      logFn(`[!] (API) ${displayUrl} failed: ${e.message.slice(0, 60)}`);
+      return null;
+    }
+  }
+
   /** 爬取 geonode.com 免费代理 */
   async _scrapeGeonode(logFn) {
     logFn(`[*] (Scrape) geonode.com...`);
@@ -298,6 +341,24 @@ class ProxyFetcher {
               proxies.forEach(p => allProxies[protocol].add(p));
             }
           }).catch(e => logFn(`[!] Scraper error: ${e.message.slice(0, 50)}`))
+        );
+      }
+    }
+
+    // 提交混合协议源任务
+    if (!cancelFlag.cancelled) {
+      for (const url of this.mixedSources) {
+        if (cancelFlag.cancelled) break;
+        tasks.push(
+          this._fetchMixedSource(url, logFn).then(result => {
+            if (result) {
+              for (const [protocol, proxies] of Object.entries(result)) {
+                if (allProxies[protocol]) {
+                  proxies.forEach(p => allProxies[protocol].add(p));
+                }
+              }
+            }
+          })
         );
       }
     }
