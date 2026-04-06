@@ -275,7 +275,7 @@ function toggleTheme() {
 }
 
 // State
-var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', sdesc: true, cancel: { cancelled: false }, settings: {}, excludedSet: new Set(), selectedSet: new Set() };
+var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', desc: true, cancel: { cancelled: false }, settings: {}, excludedSet: new Set(), selectedSet: new Set() };
 
 // API
 async function api(p, m, b) {
@@ -568,11 +568,13 @@ async function toggleExcludeSelProxy() {
   if (!S.selAddr) return;
   var addr = S.selAddr;
   if (S.excludedSet.has(addr)) {
-    await api('/proxy/exclusions/remove', 'POST', { proxies: [addr] });
+    var r = await api('/proxy/exclusions/remove', 'POST', { proxies: [addr] });
+    if (r == null) return;
     S.excludedSet.delete(addr);
     showToast(tr('tunexcl') + addr, 'in');
   } else {
-    await api('/proxy/exclusions/add', 'POST', { proxies: [addr] });
+    var r2 = await api('/proxy/exclusions/add', 'POST', { proxies: [addr] });
+    if (r2 == null) return;
     S.excludedSet.add(addr);
     showToast(tr('texcl') + addr, 'wa');
   }
