@@ -40,6 +40,8 @@
       <button class="btn btn-gho" id="btnImport" onclick="importProxies()"><i data-lucide="upload"></i> <span id="lbImport">导入</span></button>
       <button class="btn btn-agho" id="btnRetest" onclick="revalidateAll()" disabled><i data-lucide="refresh-cw"></i> <span id="lbRetest">全部重测</span></button>
       <button class="btn btn-pri" id="btnExport" onclick="exportProxies()" disabled><i data-lucide="file-down"></i> <span id="lbExport">导出代理</span></button>
+      <button class="btn btn-warn" id="btnExclSel" onclick="excludeSelected()" disabled><i data-lucide="ban"></i> <span id="lbExclSel">排除选中</span></button>
+      <button class="btn btn-gho" id="btnExclClr" onclick="clearExclusions()"><i data-lucide="filter-x"></i> <span id="lbExclClr">清除排除</span></button>
     </div>
     <div class="tdiv"></div>
     <div class="fb">
@@ -71,9 +73,9 @@
   <div class="grid">
     <!-- Table Panel -->
     <div class="panel afi" style="animation-delay:.05s">
-      <div class="phdr"><div class="phdr-l"><i data-lucide="database"></i> <span id="lblProxyList">可用代理列表</span></div><span class="ps" id="tblStats"></span></div>
+      <div class="phdr"><div class="phdr-l"><i data-lucide="database"></i> <span id="lblProxyList">可用代理列表</span></div><span class="ps" id="tblStats"></span><span class="excl-badge" id="exclBadge" style="display:none"></span></div>
       <div class="tw">
-        <table><thead><tr><th data-sort="score"><span class="th-label">评分</span></th><th data-sort="anonymity"><span class="th-label">匿名度</span></th><th data-sort="protocol"><span class="th-label">协议</span></th><th data-sort="addr"><span class="th-label">地址</span></th><th data-sort="latency"><span class="th-label">延迟(ms)</span></th><th data-sort="speed"><span class="th-label">速度(KB/s)</span></th><th data-sort="location"><span class="th-label">地区</span></th></tr></thead><tbody id="tblBody"></tbody></table>
+        <table><thead><tr><th class="chk-cell"><input type="checkbox" id="chkAll" onclick="toggleSelectAll(this)"></th><th data-sort="score"><span class="th-label">评分</span></th><th data-sort="anonymity"><span class="th-label">匿名度</span></th><th data-sort="protocol"><span class="th-label">协议</span></th><th data-sort="addr"><span class="th-label">地址</span></th><th data-sort="latency"><span class="th-label">延迟(ms)</span></th><th data-sort="speed"><span class="th-label">速度(KB/s)</span></th><th data-sort="location"><span class="th-label">地区</span></th></tr></thead><tbody id="tblBody"></tbody></table>
         <div class="empty" id="emptySt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg><div class="etext">暂无代理数据<br/>点击「获取代理」开始采集</div></div>
       </div>
     </div>
@@ -96,6 +98,8 @@
   <div class="csep"></div>
   <div class="ci" onclick="delSelProxy()"><i data-lucide="trash-2"></i> <span>删除</span></div>
   <div class="ci" onclick="copyAddr()"><i data-lucide="copy"></i> <span>复制地址</span></div>
+  <div class="csep"></div>
+  <div class="ci" id="ctxExcludeItem" onclick="toggleExcludeSelProxy()"><i data-lucide="ban"></i> <span id="ctxExcludeLbl">排除此代理</span></div>
 </div>
 
 <!-- Help Modal -->

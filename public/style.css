@@ -101,6 +101,10 @@ th:hover{color:var(--accent);background:rgba(99,102,241,.06)}
 th.sa::after{content:' \2191';color:var(--accent)}th.sd::after{content:' \2193';color:var(--accent)}
 td{padding:9px 14px;border-bottom:1px solid var(--brd);white-space:nowrap;transition:background var(tf)}
 tr{transition:background var(tf);cursor:default}tr:hover td{background:rgba(99,102,241,.08)}tr.unavail td{color:var(--t3);opacity:.55}
+tr.excluded td{opacity:.4;text-decoration:line-through;color:var(--t3)}
+tr.row-sel td{background:rgba(99,102,241,.1)!important}
+.chk-cell{width:32px!important;padding:8px 8px!important;text-align:center!important}
+.chk-cell input[type=checkbox]{cursor:pointer;accent-color:var(--accent);width:14px;height:14px}
 
 /* 新行插入动画 */
 @keyframes rowSlideIn{from{opacity:0;transform:translateY(-8px);background:rgba(99,102,241,.12)}to{opacity:1;transform:translateY(0);background:transparent}}
@@ -119,6 +123,9 @@ tr.row-new{animation:rowSlideIn .5s ease both}
 .tag{display:inline-block;padding:2px 9px;border-radius:50px;font-size:11px;font-weight:600}
 .tag-http{background:var(--aglow);color:var(--accent2)}.tag-s5{background:var(--ok-bg);color:var(--ok)}.tag-s4{background:var(--warn-bg);color:var(--warn)}
 .tag-el{background:var(--ok-bg);color:var(--ok)}.tag-an{background:var(--info-bg);color:var(--info)}.tag-tr{background:var(--err-bg);color:var(--err)}
+.btn-warn{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(245,158,11,.25)}
+.btn-warn:hover{background:rgba(245,158,11,.2)}
+.excl-badge{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-bg);padding:2px 8px;border-radius:50px;margin-left:8px}
 
 /* Log */
 .lpnl{min-height:240px}

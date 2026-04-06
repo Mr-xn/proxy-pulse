@@ -448,7 +448,7 @@ app.post('/api/proxy/revalidate', async (req, res) => {
 app.get('/api/proxy/export', (req, res) => {
   const format = (req.query.format || 'txt').toLowerCase();
   const allProxies = rotator.getAllProxiesForRevalidation();
-  const working = allProxies.filter(p => p.status === 'Working');
+  const working = allProxies.filter(p => p.status === 'Working' && !rotator.isExcluded(p.proxy));
 
   if (working.length === 0) {
     return res.json({ success: false, error: '没有可用的代理可以导出' });
@@ -485,6 +485,48 @@ app.get('/api/proxy/export', (req, res) => {
     data: content,
     contentType
   });
+});
+
+/**
+ * 获取排除列表
+ */
+app.get('/api/proxy/exclusions', (req, res) => {
+  res.json({ excluded: rotator.getExcludedProxies() });
+});
+
+/**
+ * 添加代理到排除列表（支持多选）
+ */
+app.post('/api/proxy/exclusions/add', (req, res) => {
+  const { proxies } = req.body;
+  if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
+    return res.json({ success: false, error: '未指定代理地址' });
+  }
+  rotator.addExclusion(proxies);
+  log(`已将 ${proxies.length} 个代理加入排除列表`);
+  res.json({ success: true, count: proxies.length });
+});
+
+/**
+ * 从排除列表移除代理（支持多选）
+ */
+app.post('/api/proxy/exclusions/remove', (req, res) => {
+  const { proxies } = req.body;
+  if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
+    return res.json({ success: false, error: '未指定代理地址' });
+  }
+  rotator.removeExclusion(proxies);
+  log(`已将 ${proxies.length} 个代理从排除列表移除`);
+  res.json({ success: true });
+});
+
+/**
+ * 清空排除列表
+ */
+app.post('/api/proxy/exclusions/clear', (req, res) => {
+  rotator.clearExclusions();
+  log('排除列表已清空');
+  res.json({ success: true });
 });
 
 /**

@@ -53,11 +53,19 @@ const T = {
     log_loaded: 'ProxyPulse 加载成功 ✅',
     // 右键菜单
     ctx_use: '使用此代理', ctx_del: '删除', ctx_copy: '复制地址',
+    ctx_excl: '排除此代理', ctx_unexcl: '取消排除',
     // 弹窗
     done_fmt: '完成！可用: ',
     done_total: ' / 总计: ',
     fmt_choose: '选择导出格式 (txt/csv/json):',
     fmt_txt: 'txt',
+    // 排除功能
+    excl_sel: '排除选中', excl_clr: '清除排除',
+    no_sel: '请先勾选代理',
+    texcl: '已排除 ', tunexcl: '已取消排除 ',
+    excl_cnt: '个已排除',
+    excl_cleared: '排除列表已清空',
+    cclear_excl: '确定要清空排除列表吗？',
     // 其他
     no_proxy: '无可用代理',
     empty_pool: '代理池为空',
@@ -121,11 +129,19 @@ const T = {
     log_loaded: 'ProxyPulse loaded successfully ✅',
     // 右键菜单
     ctx_use: 'Use Proxy', ctx_del: 'Delete', ctx_copy: 'Copy Address',
+    ctx_excl: 'Exclude Proxy', ctx_unexcl: 'Remove Exclusion',
     // 弹窗
     done_fmt: 'Done! Working: ',
     done_total: ' / Total: ',
     fmt_choose: 'Choose format (txt/csv/json):',
     fmt_txt: 'txt',
+    // 排除功能
+    excl_sel: 'Exclude Selected', excl_clr: 'Clear Exclusions',
+    no_sel: 'Please select proxies first',
+    texcl: 'Excluded ', tunexcl: 'Unexcluded ',
+    excl_cnt: ' excluded',
+    excl_cleared: 'Exclusion list cleared',
+    cclear_excl: 'Clear all exclusions?',
     // 其他
     no_proxy: 'No available proxy',
     empty_pool: 'Empty pool',
@@ -158,6 +174,7 @@ function applyT() {
   setTxt('lbFetch', d.fch); setTxt('lbImport', d.imp);
   setTxt('lbCancel', d.can); setTxt('lbClear', d.clr);
   setTxt('lbRetest', d.ret); setTxt('lbExport', d.exp);
+  setTxt('lbExclSel', d.excl_sel); setTxt('lbExclClr', d.excl_clr);
   setTxt('lbStartSrv', d.ssrv);
   // 过滤区
   setTxt('lblEliteOnly', d.el);
@@ -193,6 +210,7 @@ function applyT() {
   // 右键菜单
   var ctxItems = $('ctxMenu') ? $('ctxMenu').querySelectorAll('.ci span') : [];
   if (ctxItems.length >= 3) { ctxItems[0].textContent = d.ctx_use; ctxItems[1].textContent = d.ctx_del; ctxItems[2].textContent = d.ctx_copy; }
+  // 排除上下文菜单标签（动态，showCtx时更新）
   // Help Modal
   renderHelp();
 }
@@ -219,7 +237,7 @@ function toggleTheme() {
 }
 
 // State
-var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', sdesc: true, cancel: { cancelled: false }, settings: {} };
+var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', sdesc: true, cancel: { cancelled: false }, settings: {}, excludedSet: new Set(), selectedSet: new Set() };
 
 // API
 async function api(p, m, b) {
@@ -274,6 +292,8 @@ function updBtns() {
   ['btnRetest','btnExport','btnServer','btnRotate','btnAutoRotate'].forEach(function(id) {
     var el = $(id); if (el) el.disabled = S.running || !ha;
   });
+  var bxs = $('btnExclSel');
+  if (bxs) bxs.disabled = S.selectedSet.size === 0;
   var sb = $('btnServer'), si = $('bsIcon');
   if (sb) {
     if (S.server) {
@@ -352,26 +372,43 @@ function refreshTable() {
     if (emp) emp.style.display = 'none';
     fl.forEach(function(p) {
       if (!tb) return;
-      var tr = document.createElement('tr');
-      if (p.status !== 'Working') tr.className = 'unavail';
+      var row = document.createElement('tr');
+      var isExcl = S.excludedSet.has(p.proxy);
+      var isSel = S.selectedSet.has(p.proxy);
+      var cls = [];
+      if (p.status !== 'Working') cls.push('unavail');
+      if (isExcl) cls.push('excluded');
+      if (isSel) cls.push('row-sel');
+      row.className = cls.join(' ');
       var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
       var lt = p.status === 'Working' && p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
       var sp = p.status === 'Working' ? (p.speed || 0).toFixed(2) : '-';
       var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
       var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
-      tr.innerHTML =
+      row.innerHTML =
+        '<td class="chk-cell"><input type="checkbox" ' + (isSel ? 'checked' : '') + ' onclick="toggleRowSel(event,\'' + esc(p.proxy) + '\')"></td>' +
         '<td style="font-weight:700;color:' + (p.status === 'Working' ? 'var(--accent)' : 'var(--t3)') + '">' + sc + '</td>' +
         '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
         '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
         '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:' + (p.status === 'Working' ? 'var(--ok)' : '') + '">' + esc(p.proxy) + '</td>' +
         '<td>' + lt + '</td><td>' + sp + '</td>' +
         '<td>' + esc(p.location || '-') + '</td>';
-      tr.dataset.addr = p.proxy;
-      tr.ondblclick = function() { copySingle(p.proxy); };
-      tr.oncontextmenu = function(e) { showCtx(e, p.proxy); };
-      tb.appendChild(tr);
+      row.dataset.addr = p.proxy;
+      row.ondblclick = function() { copySingle(p.proxy); };
+      row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
+      tb.appendChild(row);
     });
   }
+  // 更新全选框状态
+  var chkAll = $('chkAll');
+  if (chkAll) {
+    var visAddrs = fl.map(function(p){return p.proxy;});
+    var allSel = visAddrs.length > 0 && visAddrs.every(function(a){return S.selectedSet.has(a);});
+    chkAll.checked = allSel;
+    chkAll.indeterminate = !allSel && visAddrs.some(function(a){return S.selectedSet.has(a);});
+  }
+  // 更新排除徽标
+  updExclBadge();
   upRegion();
   updBtns();
 }
@@ -412,6 +449,8 @@ function showCtx(e, a) {
   m.style.top = e.pageY + 'px';
   var items = m.querySelectorAll('.ci span');
   if (items.length >= 3) { items[0].textContent = tr('ctx_use'); items[1].textContent = tr('ctx_del'); items[2].textContent = tr('ctx_copy'); }
+  var exclLbl = $('ctxExcludeLbl');
+  if (exclLbl) exclLbl.textContent = S.excludedSet.has(a) ? tr('ctx_unexcl') : tr('ctx_excl');
 }
 document.addEventListener('click', function() { var m = $('ctxMenu'); if (m) m.style.display = 'none'; });
 
@@ -439,6 +478,104 @@ function delSelProxy() {
 }
 function copyAddr() { if(!S.selAddr)return; navigator.clipboard.writeText(S.selAddr); showToast(tr('tcop')+S.selAddr,'ok'); }
 function copySingle(a) { navigator.clipboard.writeText(a); showToast(tr('tcop')+a,'ok'); }
+
+// 排除功能
+function toggleRowSel(e, addr) {
+  e.stopPropagation();
+  if (S.selectedSet.has(addr)) S.selectedSet.delete(addr);
+  else S.selectedSet.add(addr);
+  var row = e.target.closest('tr');
+  if (row) {
+    if (S.selectedSet.has(addr)) row.classList.add('row-sel');
+    else row.classList.remove('row-sel');
+  }
+  // 更新全选框
+  var chkAll = $('chkAll');
+  if (chkAll) {
+    var tb = $('tblBody');
+    var visAddrs = tb ? Array.from(tb.querySelectorAll('tr')).map(function(r){return r.dataset.addr;}).filter(Boolean) : [];
+    var allSel = visAddrs.length > 0 && visAddrs.every(function(a){return S.selectedSet.has(a);});
+    chkAll.checked = allSel;
+    chkAll.indeterminate = !allSel && visAddrs.some(function(a){return S.selectedSet.has(a);});
+  }
+  updBtns();
+}
+
+function toggleSelectAll(chk) {
+  var tb = $('tblBody');
+  if (!tb) return;
+  var rows = tb.querySelectorAll('tr');
+  rows.forEach(function(row) {
+    var addr = row.dataset.addr;
+    if (!addr) return;
+    if (chk.checked) {
+      S.selectedSet.add(addr);
+      row.classList.add('row-sel');
+    } else {
+      S.selectedSet.delete(addr);
+      row.classList.remove('row-sel');
+    }
+    var cb = row.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = chk.checked;
+  });
+  updBtns();
+}
+
+async function toggleExcludeSelProxy() {
+  if (!S.selAddr) return;
+  var addr = S.selAddr;
+  if (S.excludedSet.has(addr)) {
+    await api('/proxy/exclusions/remove', 'POST', { proxies: [addr] });
+    S.excludedSet.delete(addr);
+    showToast(tr('tunexcl') + addr, 'in');
+  } else {
+    await api('/proxy/exclusions/add', 'POST', { proxies: [addr] });
+    S.excludedSet.add(addr);
+    showToast(tr('texcl') + addr, 'wa');
+  }
+  refreshTable();
+}
+
+async function excludeSelected() {
+  if (S.selectedSet.size === 0) { showToast(tr('no_sel'), 'wa'); return; }
+  var addrs = [...S.selectedSet];
+  var toExcl = addrs.filter(function(a){ return !S.excludedSet.has(a); });
+  var toUnexcl = addrs.filter(function(a){ return S.excludedSet.has(a); });
+  if (toExcl.length) {
+    await api('/proxy/exclusions/add', 'POST', { proxies: toExcl });
+    toExcl.forEach(function(a){ S.excludedSet.add(a); });
+  }
+  if (toUnexcl.length) {
+    await api('/proxy/exclusions/remove', 'POST', { proxies: toUnexcl });
+    toUnexcl.forEach(function(a){ S.excludedSet.delete(a); });
+  }
+  S.selectedSet.clear();
+  var msg = toExcl.length ? tr('texcl') + toExcl.length : '';
+  if (toUnexcl.length) msg += (msg ? ' / ' : '') + tr('tunexcl') + toUnexcl.length;
+  showToast(msg, 'in');
+  refreshTable();
+}
+
+async function clearExclusions() {
+  if (S.excludedSet.size === 0) return;
+  if (!confirm(tr('cclear_excl'))) return;
+  await api('/proxy/exclusions/clear', 'POST');
+  S.excludedSet.clear();
+  showToast(tr('excl_cleared'), 'in');
+  refreshTable();
+}
+
+function updExclBadge() {
+  var badge = $('exclBadge');
+  if (!badge) return;
+  var cnt = S.excludedSet.size;
+  if (cnt > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = cnt + ' ' + tr('excl_cnt');
+  } else {
+    badge.style.display = 'none';
+  }
+}
 
 // Core Actions
 async function startFetch() {
@@ -488,26 +625,27 @@ function appendProxyRow(p) {
   var tb = $('tblBody'), emp = $('emptySt');
   if (!tb) return;
   if (emp) emp.style.display = 'none';
-  var tr = document.createElement('tr');
-  tr.className = 'row-new';
+  var row = document.createElement('tr');
+  row.className = 'row-new';
   var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
   var lt = p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
   var sp = (p.speed || 0).toFixed(2);
   var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
   var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
-  tr.innerHTML =
+  row.innerHTML =
+    '<td class="chk-cell"><input type="checkbox" onclick="toggleRowSel(event,\'' + esc(p.proxy) + '\')"></td>' +
     '<td style="font-weight:700;color:var(--accent)">' + sc + '</td>' +
     '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
     '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
     '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:var(--ok)">' + esc(p.proxy) + '</td>' +
     '<td>' + lt + '</td><td>' + sp + '</td>' +
     '<td>' + esc(p.location || '-') + '</td>';
-  tr.dataset.addr = p.proxy;
-  tr.ondblclick = function() { copySingle(p.proxy); };
-  tr.oncontextmenu = function(e) { showCtx(e, p.proxy); };
-  tb.insertBefore(tr, tb.firstChild);
+  row.dataset.addr = p.proxy;
+  row.ondblclick = function() { copySingle(p.proxy); };
+  row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
+  tb.insertBefore(row, tb.firstChild);
   // 动画结束后移除class
-  setTimeout(function(){ tr.classList.remove('row-new'); }, 600);
+  setTimeout(function(){ row.classList.remove('row-new'); }, 600);
   upRegion();
 }
 
@@ -571,7 +709,7 @@ async function clearAll() {
   if(S.running){showToast(tr('wait_task'),'wa');return;}
   if(!confirm(tr('cclear')))return;
   await api('/proxy/clear','POST');
-  S.proxies=[];S.dSet.clear();stopAutoRot();refreshTable();
+  S.proxies=[];S.dSet.clear();S.selectedSet.clear();stopAutoRot();refreshTable();
   log(tr('log_cleared'),'wa');
   showToast(tr('tclr'),'in');
 }
@@ -736,6 +874,7 @@ window.onload=function(){
   applyT();
   startLogStream();
   api('/settings/get').then(function(res){if(res&&res.settings)S.settings=res.settings;});
+  api('/proxy/exclusions').then(function(res){if(res&&res.excluded){S.excludedSet=new Set(res.excluded);updExclBadge();}});
   log(tr('log_loaded'),'ok');
   log(tr('ltip'),'in');
 };
