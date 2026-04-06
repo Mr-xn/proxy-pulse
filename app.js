@@ -900,10 +900,12 @@ app.post('/api/server/start', (req, res) => {
     return res.json({ success: false, error: '代理池中无可用代理' });
   }
 
-  // 如果没有当前代理，先轮换一个
+  // 如果没有当前代理，先轮换一个（启动时自动选取IP）
   if (!rotator.getCurrentProxy()) {
     rotator.getNextProxy();
   }
+
+  const currentProxy = rotator.getCurrentProxy();
 
   const ac = state.settings.proxyAuth;
   const authConfig = (ac && ac.enabled && ac.passwordHash)
@@ -921,11 +923,16 @@ app.post('/api/server/start', (req, res) => {
   proxyServer.on('log', msg => log(msg));
 
   proxyServer.startAll();
+
+  if (currentProxy) {
+    log(`[启动] 自动选取代理: ${currentProxy.protocol}://${currentProxy.proxy}`, 'info');
+  }
   
   res.json({ 
     success: true, 
     httpPort: HTTP_PROXY_PORT, 
-    socks5Port: SOCKS5_PROXY_PORT 
+    socks5Port: SOCKS5_PROXY_PORT,
+    currentProxy: currentProxy || null
   });
 });
 
@@ -937,6 +944,8 @@ app.post('/api/server/stop', (req, res) => {
     return res.json({ success: false, error: '服务未运行' });
   }
 
+  // 停止逐请求轮换模式
+  proxyServer.setRotationMode(false);
   proxyServer.stopAll();
   proxyServer = null;
   res.json({ success: true });
@@ -949,11 +958,29 @@ app.post('/api/server/stop', (req, res) => {
 // 覆盖: loopback, RFC1918, link-local, IPv6 loopback/ULA/link-local, IPv4-mapped IPv6
 const SSRF_PRIVATE_RE = /^(localhost$|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0$|::1$|::ffff:(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i;
 
+// 自检模式的验证 URL 列表（用于二次验证）
+const SELF_CHECK_URLS = [
+  'https://www.google.com/generate_204',
+  'https://www.gstatic.com/generate_204',
+  'https://www.apple.com/library/test/success.html',
+  'http://www.msftconnecttest.com/connecttest.txt',
+  'https://api.ipify.org?format=json'
+];
+
+// 测试并发控制：防止多次测试同时执行导致CPU飙升
+let _testRunning = false;
+
 app.get('/api/server/test', async (req, res) => {
   if (!proxyServer) {
     return res.json({ success: false, error: '代理服务未启动' });
   }
 
+  if (_testRunning) {
+    return res.json({ success: false, error: '测试正在进行中，请稍后重试' });
+  }
+  _testRunning = true;
+
+  try {
   const rawUrl = (req.query.url || 'https://api.ipify.org?format=json').trim();
 
   // 校验 URL 安全性：只允许 http/https，禁止内网/保留地址（防 SSRF）
@@ -978,15 +1005,29 @@ app.get('/api/server/test', async (req, res) => {
 
   try {
     const { SocksProxyAgent } = require('socks-proxy-agent');
+    const { HttpProxyAgent } = require('http-proxy-agent');
+    const { HttpsProxyAgent } = require('https-proxy-agent');
     const axios = require('axios');
 
-    const agent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
+    // 根据上游代理协议选择合适的代理 Agent
+    const protocol = (currentProxy.protocol || 'SOCKS5').toUpperCase();
+    let httpAgent, httpsAgent;
+    if (protocol === 'HTTP') {
+      const httpProxyUrl = `http://127.0.0.1:${HTTP_PROXY_PORT}`;
+      httpAgent = new HttpProxyAgent(httpProxyUrl);
+      httpsAgent = new HttpsProxyAgent(httpProxyUrl);
+    } else {
+      const socksAgent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
+      httpAgent = socksAgent;
+      httpsAgent = socksAgent;
+    }
+
     const startTime = Date.now();
     // testUrl is a validated, non-private HTTP/HTTPS URL
     const testUrl = parsedUrl.toString();
     const response = await axios.get(testUrl, {
-      httpAgent: agent,
-      httpsAgent: agent,
+      httpAgent,
+      httpsAgent,
       timeout: 15000,
       validateStatus: () => true,
       responseType: 'text',
@@ -994,7 +1035,7 @@ app.get('/api/server/test', async (req, res) => {
     });
     const latencyMs = Date.now() - startTime;
     const statusCode = response.status;
-    const ok = statusCode >= 200 && statusCode < 300;
+    const ok = statusCode >= 200 && statusCode < 400;
 
     // 尝试提取出口 IP（仅当响应为 JSON 且含 ip 字段时，如 ipify）
     let exitIp = null;
@@ -1014,11 +1055,55 @@ app.get('/api/server/test', async (req, res) => {
       upstreamProtocol: currentProxy.protocol
     };
 
-    log(`[测试] ${testUrl} → HTTP ${statusCode} (${latencyMs}ms) via ${currentProxy.protocol}://${currentProxy.proxy}`, ok ? 'success' : 'warn');
+    // 如果初始测试通过，使用自检 URL 进行二次验证以提高准确性
+    if (ok) {
+      const verifyUrl = SELF_CHECK_URLS[Math.floor(Math.random() * SELF_CHECK_URLS.length)];
+      try {
+        let vHttpAgent, vHttpsAgent;
+        if (protocol === 'HTTP') {
+          const httpProxyUrl = `http://127.0.0.1:${HTTP_PROXY_PORT}`;
+          vHttpAgent = new HttpProxyAgent(httpProxyUrl);
+          vHttpsAgent = new HttpsProxyAgent(httpProxyUrl);
+        } else {
+          const vSocksAgent = new SocksProxyAgent(`socks5://127.0.0.1:${SOCKS5_PROXY_PORT}`);
+          vHttpAgent = vSocksAgent;
+          vHttpsAgent = vSocksAgent;
+        }
+        const verifyRes = await axios.get(verifyUrl, {
+          httpAgent: vHttpAgent,
+          httpsAgent: vHttpsAgent,
+          timeout: 10000,
+          validateStatus: () => true,
+          responseType: 'text',
+          maxRedirects: 5
+        });
+        const vStatus = verifyRes.status;
+        const vOk = vStatus >= 200 && vStatus < 400;
+        result.verifyUrl = verifyUrl;
+        result.verifyStatus = vStatus;
+        result.verifyOk = vOk;
+        if (!vOk) {
+          result.success = false;
+          result.verifyError = `二次验证失败: ${verifyUrl} HTTP ${vStatus}`;
+        }
+        log(`[测试] 二次验证 ${verifyUrl} → HTTP ${vStatus}`, vOk ? 'success' : 'warn');
+      } catch (vErr) {
+        result.success = false;
+        result.verifyUrl = verifyUrl;
+        result.verifyOk = false;
+        result.verifyError = `二次验证失败: ${vErr.message}`;
+        log(`[测试] 二次验证 ${verifyUrl} 失败: ${vErr.message}`, 'warn');
+      }
+    }
+
+    log(`[测试] ${testUrl} → HTTP ${statusCode} (${latencyMs}ms) via ${currentProxy.protocol}://${currentProxy.proxy}`, result.success ? 'success' : 'warn');
     res.json(result);
   } catch (e) {
     log(`[测试] ${rawUrl} 失败: ${e.message}`, 'error');
     res.json({ success: false, error: e.message });
+  }
+  } finally {
+    _testRunning = false;
   }
 });
 

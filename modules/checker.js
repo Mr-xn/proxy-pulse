@@ -278,7 +278,7 @@ class ProxyChecker {
     let survivors = allProxies;
     if (total > 0) {
       logFn(`[*] 阶段一：TCP预检开始，总数: ${total}...`);
-      const precheckBatchSize = Math.min(500, total); // 每批最多500个并发
+      const precheckBatchSize = Math.min(200, total); // 每批最多200个并发，降低CPU压力
       const precheckResults = [];
       for (let i = 0; i < total; i += precheckBatchSize) {
         if (cancelFlag.cancelled) break;
@@ -287,13 +287,17 @@ class ProxyChecker {
           batch.map(p => this._preCheckProxy(p.proxy))
         );
         precheckResults.push(...batchResults);
+        // 批次间让出事件循环，降低CPU占用
+        if (i + precheckBatchSize < total) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
       }
       survivors = allProxies.filter((_, i) => precheckResults[i]);
       logFn(`[+] 阶段一：TCP预检完成，幸存者: ${survivors.length} / ${total}`);
     }
 
     if (cancelFlag.cancelled) {
-      log('[Checker] 任务在TCP预检后被用户取消。');
+      logFn('[Checker] 任务在TCP预检后被用户取消。');
       return;
     }
 
@@ -305,8 +309,8 @@ class ProxyChecker {
       return;
     }
 
-    // 并发控制：使用分批处理模拟线程池
-    const batchSize = maxWorkers;
+    // 并发控制：使用分批处理模拟线程池，限制并发数降低CPU压力
+    const batchSize = Math.min(maxWorkers, 50);
     for (let i = 0; i < survivors.length; i += batchSize) {
       if (cancelFlag.cancelled) break;
       
@@ -321,6 +325,10 @@ class ProxyChecker {
           this.calculateScore(r.value);
           if (resultHandler) resultHandler(r.value);
         }
+      }
+      // 批次间让出事件循环，避免CPU长时间被占满
+      if (i + batchSize < survivors.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
