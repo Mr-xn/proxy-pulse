@@ -149,7 +149,7 @@ class ProxyServer extends EventEmitter {
     
     try {
       // 接收请求数据（超时 10 秒）
-      const requestData = await this._recvWithTimeout(clientSocket, 8192, 10000);
+      const requestData = await this._recvHttpHeaders(clientSocket, 10000);
       if (!requestData || requestData.length === 0) return;
 
       const firstLine = requestData.toString().split('\r\n')[0];
@@ -352,6 +352,62 @@ class ProxyServer extends EventEmitter {
       sock2.unpipe(sock1);
       sock1.unpipe(sock2);
       if (!sock1.destroyed) sock1.destroy();
+    });
+  }
+
+  /**
+   * 接收 HTTP 请求头（直到 \r\n\r\n 或超时）
+   */
+  _recvHttpHeaders(socket, timeout = 10000) {
+    return new Promise((resolve, reject) => {
+      const bufferList = [];
+      let totalSize = 0;
+      const MAX_HEADER_SIZE = 65536; // 64 KB guard
+
+      const timer = setTimeout(() => {
+        socket.removeListener('data', onData);
+        socket.removeListener('end', onEnd);
+        socket.removeListener('error', onError);
+        reject(new Error('ETIMEDOUT'));
+      }, timeout);
+
+      function finish(buf) {
+        clearTimeout(timer);
+        socket.removeListener('data', onData);
+        socket.removeListener('end', onEnd);
+        socket.removeListener('error', onError);
+        resolve(buf);
+      }
+
+      function onData(data) {
+        bufferList.push(data);
+        totalSize += data.length;
+        const combined = Buffer.concat(bufferList);
+        // Resolve once end-of-headers sequence is found
+        if (combined.indexOf('\r\n\r\n') !== -1) {
+          finish(combined);
+          return;
+        }
+        // Guard against oversized headers
+        if (totalSize >= MAX_HEADER_SIZE) {
+          finish(combined);
+        }
+      }
+
+      function onEnd() {
+        finish(Buffer.concat(bufferList));
+      }
+
+      function onError(err) {
+        clearTimeout(timer);
+        socket.removeListener('data', onData);
+        socket.removeListener('end', onEnd);
+        reject(err);
+      }
+
+      socket.on('data', onData);
+      socket.on('end', onEnd);
+      socket.on('error', onError);
     });
   }
 

@@ -79,6 +79,11 @@
         <table><thead><tr><th class="chk-cell"><input type="checkbox" id="chkAll" onclick="toggleSelectAll(this)"></th><th data-sort="score"><span class="th-label">评分</span></th><th data-sort="anonymity"><span class="th-label">匿名度</span></th><th data-sort="protocol"><span class="th-label">协议</span></th><th data-sort="addr"><span class="th-label">地址</span></th><th data-sort="latency"><span class="th-label">延迟(ms)</span></th><th data-sort="speed"><span class="th-label">速度(KB/s)</span></th><th data-sort="location"><span class="th-label">地区</span></th></tr></thead><tbody id="tblBody"></tbody></table>
         <div class="empty" id="emptySt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg><div class="etext">暂无代理数据<br/>点击「获取代理」开始采集</div></div>
       </div>
+      <div class="pg-bar" id="pgCont" style="display:none">
+        <button class="btn btn-gho pg-btn" id="pgPrev" onclick="pgPrev()" disabled><i data-lucide="chevron-left" style="width:14px;height:14px"></i></button>
+        <span class="pg-info" id="pgInfo"></span>
+        <button class="btn btn-gho pg-btn" id="pgNext" onclick="pgNext()"><i data-lucide="chevron-right" style="width:14px;height:14px"></i></button>
+      </div>
     </div>
 
     <!-- Log Panel -->
@@ -124,7 +129,7 @@
       </div>
       <div class="auth-field">
         <label id="authPwLabel"></label>
-        <input type="password" id="authPw" autocomplete="new-password" placeholder="••••••">
+        <input type="password" id="authPw" autocomplete="current-password" placeholder="••••••">
       </div>
       <div class="auth-field" id="authConfirmField" style="display:none">
         <label id="authConfirmLabel"></label>

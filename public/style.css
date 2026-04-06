@@ -202,3 +202,8 @@ input[type="text"]:focus,input[type="password"]:focus{border-color:var(--accent)
 .sf-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--brd)}
 .sf-row:last-child{border-bottom:none}
 .sf-row label{font-size:13px;color:var(--t2);flex-shrink:0}
+
+/* Pagination bar */
+.pg-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 12px;border-top:1px solid var(--brd);flex-shrink:0}
+.pg-btn{padding:4px 10px;min-width:32px;height:28px;display:flex;align-items:center;justify-content:center}
+.pg-info{font-size:12px;color:var(--t3);min-width:100px;text-align:center}

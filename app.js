@@ -34,13 +34,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 清空日志 API
-app.post('/api/logs/clear', (req, res) => {
-  if (state.logStreamCallback) {
-    state.logStreamCallback({ message: '--- Logs cleared by user ---', level: 'warn' });
-  }
-  res.json({ success: true });
-});
+
 
 // 文件上传配置 (用于导入代理)
 const upload = multer({
@@ -149,17 +143,60 @@ function loadPool() {
 // ==================== Auth ====================
 const sessions = new Map();
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_SESSIONS = 10000;
 
 // Simple in-memory rate limiter for auth endpoints
 const loginAttempts = new Map();
 const RATE_MAX = 10;
 const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_LOGIN_ATTEMPTS_TRACKED = 10000;
+const AUTH_STATE_CLEANUP_MS = 60 * 1000; // 1 minute
+
+function pruneExpiredLoginAttempts(now = Date.now()) {
+  for (const [ip, rec] of loginAttempts) {
+    if (!rec || typeof rec.resetAt !== 'number' || now > rec.resetAt) {
+      loginAttempts.delete(ip);
+    }
+  }
+}
+
+function pruneExpiredSessions(now = Date.now()) {
+  for (const [sid, session] of sessions) {
+    if (!session || typeof session !== 'object') {
+      sessions.delete(sid);
+      continue;
+    }
+    const expiry = typeof session.expiry === 'number' ? session.expiry : null;
+    if (expiry !== null && now > expiry) {
+      sessions.delete(sid);
+    }
+  }
+}
+
+function enforceMapLimit(map, maxEntries) {
+  while (map.size >= maxEntries) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+}
+
+const authStateCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  pruneExpiredLoginAttempts(now);
+  pruneExpiredSessions(now);
+}, AUTH_STATE_CLEANUP_MS);
+if (typeof authStateCleanupTimer.unref === 'function') {
+  authStateCleanupTimer.unref();
+}
 
 function rateLimitAuth(req, res, next) {
   const ip = (req.ip || req.socket.remoteAddress || 'unknown').replace('::ffff:', '');
   const now = Date.now();
+  pruneExpiredLoginAttempts(now);
   let rec = loginAttempts.get(ip);
   if (!rec || now > rec.resetAt) {
+    enforceMapLimit(loginAttempts, MAX_LOGIN_ATTEMPTS_TRACKED);
     rec = { count: 0, resetAt: now + RATE_WINDOW_MS };
     loginAttempts.set(ip, rec);
   }
@@ -196,9 +233,16 @@ function parseCookies(req) {
 }
 
 function createSession() {
+  enforceMapLimit(sessions, MAX_SESSIONS);
   const token = randomHex(32);
   sessions.set(token, { expiry: Date.now() + SESSION_TTL });
   return token;
+}
+
+function buildAuthCookie(req, token, maxAgeSec) {
+  const isHttps = req.secure || (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+  const secure = isHttps ? '; Secure' : '';
+  return `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}; Path=/${secure}`;
 }
 
 function validateSession(token) {
@@ -212,6 +256,10 @@ function isWebAuthEnabled() {
   return !!(state.settings.auth && state.settings.auth.enabled && state.settings.auth.passwordHash);
 }
 
+function isAuthConfigured() {
+  return !!(state.settings.auth && state.settings.auth.passwordHash && state.settings.auth.passwordSalt);
+}
+
 function isAuthenticated(req) {
   if (!isWebAuthEnabled()) return true;
   return validateSession(parseCookies(req).auth_token);
@@ -223,6 +271,14 @@ app.use('/api', (req, res, next) => {
   if (pub.includes(req.path)) return next();
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Unauthorized' });
   next();
+});
+
+// 清空日志 API
+app.post('/api/logs/clear', (req, res) => {
+  if (state.logStreamCallback) {
+    state.logStreamCallback({ message: '--- Logs cleared by user ---', level: 'warn' });
+  }
+  res.json({ success: true });
 });
 
 // ==================== Auth Routes ====================
@@ -245,7 +301,7 @@ app.post('/api/auth/setup', rateLimitAuth, (req, res) => {
   saveConfig();
   clearRateLimit(req);
   const token = createSession();
-  res.setHeader('Set-Cookie', `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}; Path=/`);
+  res.setHeader('Set-Cookie', buildAuthCookie(req, token, SESSION_TTL / 1000));
   res.json({ success: true });
 });
 
@@ -259,7 +315,7 @@ app.post('/api/auth/login', rateLimitAuth, (req, res) => {
   }
   clearRateLimit(req);
   const token = createSession();
-  res.setHeader('Set-Cookie', `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}; Path=/`);
+  res.setHeader('Set-Cookie', buildAuthCookie(req, token, SESSION_TTL / 1000));
   res.json({ success: true });
 });
 
@@ -270,14 +326,26 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/auth/change-password', rateLimitAuth, (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (isWebAuthEnabled()) {
-    const { passwordHash, passwordSalt } = state.settings.auth;
-    if (hashPassword(currentPassword, passwordSalt) !== passwordHash) {
-      return res.status(401).json({ error: '当前密码错误' });
-    }
+app.post('/api/auth/change-password', rateLimitAuth, (req, res) => { // rate-limited via rateLimitAuth
+  if (!isAuthConfigured()) {
+    return res.status(400).json({ error: '请先通过 /api/auth/setup 设置密码' });
   }
+
+  const cookies = parseCookies(req);
+  if (!cookies.auth_token || !validateSession(cookies.auth_token)) {
+    return res.status(401).json({ error: '未授权' });
+  }
+
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword) {
+    return res.status(400).json({ error: '请输入当前密码' });
+  }
+
+  const { passwordHash, passwordSalt } = state.settings.auth;
+  if (hashPassword(currentPassword, passwordSalt) !== passwordHash) {
+    return res.status(401).json({ error: '当前密码错误' });
+  }
+
   if (!newPassword || newPassword.length < 6) {
     return res.status(400).json({ error: '新密码至少需要6位' });
   }
@@ -289,7 +357,7 @@ app.post('/api/auth/change-password', rateLimitAuth, (req, res) => {
   saveConfig();
   clearRateLimit(req);
   const token = createSession();
-  res.setHeader('Set-Cookie', `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}; Path=/`);
+  res.setHeader('Set-Cookie', buildAuthCookie(req, token, SESSION_TTL / 1000));
   res.json({ success: true });
 });
 
@@ -314,8 +382,13 @@ function log(message, level = 'normal') {
 
 // ==================== API Routes ====================
 
+// Performance constants
+const MAX_RESULTS_BUFFER = 5000;   // cap pending validation results in memory
+const MAX_POOL_SIZE = 50000;       // hard cap on rotator proxy list
+const SSE_LOG_INTERVAL_MS = 50;   // flush batched SSE logs every 50 ms
+
 /**
- * 获取日志流 (SSE)
+ * 获取日志流 (SSE) – 日志以 50ms 为批次发送，防止高频验证时刷屏压垮客户端
  */
 app.get('/api/logs/stream', (req, res) => {
   res.writeHead(200, {
@@ -329,17 +402,29 @@ app.get('/api/logs/stream', (req, res) => {
   const welcomeMsg = { message: '日志流已连接...', level: 'info' };
   res.write(`data: ${JSON.stringify(welcomeMsg)}\n\n`);
 
-  const onLog = (data) => {
+  let logQueue = [];
+  let closed = false;
+
+  const flushTimer = setInterval(() => {
+    if (closed || logQueue.length === 0) return;
+    const batch = logQueue.splice(0);
     try {
-      res.write(`data: ${data}\n\n`);
+      for (const data of batch) res.write(`data: ${data}\n\n`);
     } catch (e) {
       // Client disconnected
     }
+  }, SSE_LOG_INTERVAL_MS);
+
+  const onLog = (data) => {
+    if (!closed) logQueue.push(data);
   };
 
   state.logEmitter.on('log', onLog);
 
   req.on('close', () => {
+    closed = true;
+    clearInterval(flushTimer);
+    logQueue = [];
     state.logEmitter.removeListener('log', onLog);
   });
 });
@@ -412,11 +497,17 @@ function handleValidationResult(result) {
   }
 
   state.progress.current++;
-  state.resultsBuffer.push(result);
 
-  // 添加到轮换器（去重）
+  // Cap in-memory results buffer to prevent OOM when frontend is slow/disconnected
+  if (state.resultsBuffer.length < MAX_RESULTS_BUFFER) {
+    state.resultsBuffer.push(result);
+  }
+
+  // 添加到轮换器（去重），并守卫代理池上限
   if (result.status === 'Working') {
-    rotator.addProxy(result);
+    if (rotator.getAllProxiesForRevalidation().length < MAX_POOL_SIZE) {
+      rotator.addProxy(result);
+    }
   }
 }
 
