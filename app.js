@@ -27,6 +27,7 @@ const app = express();
 const PORT = process.env.PORT || 3456;
 const HTTP_PROXY_PORT = 1801;
 const SOCKS5_PROXY_PORT = 1800;
+const POOL_FILE = path.join(__dirname, 'pool.json');
 
 // 中间件
 app.use(express.json({ limit: '50mb' }));
@@ -105,6 +106,43 @@ function saveConfig() {
     );
   } catch (e) {
     log(`保存设置失败: ${e.message}`, 'error');
+  }
+}
+
+// ==================== Pool Persistence ====================
+let _savePoolTimer = null;
+
+function savePool() {
+  if (_savePoolTimer) clearTimeout(_savePoolTimer);
+  _savePoolTimer = setTimeout(() => {
+    try {
+      fs.writeFileSync(POOL_FILE, JSON.stringify({
+        proxies: rotator.getAllProxiesForRevalidation(),
+        excluded: rotator.getExcludedProxies()
+      }, null, 2), 'utf-8');
+    } catch (e) {
+      log(`保存代理池失败: ${e.message}`, 'error');
+    }
+  }, 2000);
+}
+
+function loadPool() {
+  try {
+    if (fs.existsSync(POOL_FILE)) {
+      const data = JSON.parse(fs.readFileSync(POOL_FILE, 'utf-8'));
+      if (data.proxies && Array.isArray(data.proxies)) {
+        for (const p of data.proxies) rotator.addProxy(p);
+      }
+      if (data.excluded && Array.isArray(data.excluded)) {
+        rotator.addExclusion(data.excluded);
+      }
+      const cnt = rotator.getActiveProxiesCount();
+      if (cnt > 0) {
+        log(`已从缓存恢复 ${cnt} 个可用代理`, 'info');
+      }
+    }
+  } catch (e) {
+    log(`加载代理池缓存失败: ${e.message}`, 'warn');
   }
 }
 
@@ -390,6 +428,7 @@ function finishTask() {
   const totalInRotator = rotator.getAllProxiesForRevalidation().length;
   log(`\n${'='.repeat(20)} 任务全部完成 ${'='.repeat(20)}`);
   log(`代理池现有 ${workingCount} 个可用的代理。`, workingCount > 0 ? 'success' : 'warn');
+  savePool();
 }
 
 /**
@@ -542,10 +581,8 @@ app.post('/api/proxy/clear', (req, res) => {
   rotator.clear();
   state.resultsBuffer = []; // Also clear the buffer since we cleared everything
   
-  // Clear displayed proxies tracking by removing all from buffer
-  // The frontend will also need to clear its list
-  
   log('所有代理已清空');
+  savePool();
   res.json({ success: true });
 });
 
@@ -688,6 +725,7 @@ app.post('/api/proxy/exclusions/add', (req, res) => {
   }
   rotator.addExclusion(proxies);
   log(`已将 ${proxies.length} 个代理加入排除列表`);
+  savePool();
   res.json({ success: true, count: proxies.length });
 });
 
@@ -701,6 +739,7 @@ app.post('/api/proxy/exclusions/remove', (req, res) => {
   }
   rotator.removeExclusion(proxies);
   log(`已将 ${proxies.length} 个代理从排除列表移除`);
+  savePool();
   res.json({ success: true });
 });
 
@@ -710,6 +749,7 @@ app.post('/api/proxy/exclusions/remove', (req, res) => {
 app.post('/api/proxy/exclusions/clear', (req, res) => {
   rotator.clearExclusions();
   log('排除列表已清空');
+  savePool();
   res.json({ success: true });
 });
 
@@ -752,6 +792,7 @@ app.post('/api/proxy/remove', (req, res) => {
   if (!proxy) return res.json({ success: false, error: '未指定代理地址' });
 
   const removed = rotator.removeProxy(proxy);
+  if (removed) savePool();
   res.json({ success: removed });
 });
 
@@ -897,6 +938,19 @@ app.get('/api/proxy/list', (req, res) => {
   res.json({ proxies });
 });
 
+/**
+ * 获取应用运行状态（供前端刷新后恢复）
+ */
+app.get('/api/status', (req, res) => {
+  res.json({
+    isRunningTask: state.isRunningTask,
+    progress: state.progress,
+    taskFinished: state.taskFinished,
+    proxyCount: rotator.getActiveProxiesCount(),
+    serverRunning: !!proxyServer
+  });
+});
+
 // ==================== Server Start ====================
 app.listen(PORT, () => {
   console.log('');
@@ -915,6 +969,9 @@ app.listen(PORT, () => {
 
   // 加载配置
   loadConfig();
+
+  // 恢复代理池缓存
+  loadPool();
 
   // 创建 temp 目录
   const tempDir = path.join(__dirname, 'temp');

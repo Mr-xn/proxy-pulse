@@ -92,6 +92,9 @@ const T = {
     settings_saved: '设置已保存', settings_pw_changed: '密码已更新，请重新登录',
     settings_err_cur_pw: '当前密码错误', settings_err_short: '密码至少需要6位',
     settings_err_mismatch: '两次密码不一致',
+    // Pool restore
+    pool_restored: '已恢复代理池：',
+    pool_task_resumed: '任务运行中，正在继续监听...',
   },
   en: {
     t: 'ProxyPulse',
@@ -183,6 +186,9 @@ const T = {
     settings_saved: 'Settings saved', settings_pw_changed: 'Password updated, please login again',
     settings_err_cur_pw: 'Current password is incorrect', settings_err_short: 'Password must be at least 6 characters',
     settings_err_mismatch: 'Passwords do not match',
+    // Pool restore
+    pool_restored: 'Proxy pool restored: ',
+    pool_task_resumed: 'Task is running, resuming listener...',
   }
 };
 
@@ -1050,6 +1056,19 @@ async function saveSettings() {
 }
 
 // Init
+function loadProxiesIntoTable(proxies) {
+  if (!proxies || !proxies.length) return;
+  for (var i = 0; i < proxies.length; i++) {
+    var p = proxies[i];
+    if (!p || !p.proxy || S.dSet.has(p.proxy)) continue;
+    S.dSet.add(p.proxy);
+    S.proxies.push(p);
+  }
+  refreshTable();
+  updStats();
+  updBtns();
+}
+
 window.onload=function(){
   lucide.createIcons({attrs:{strokeWidth:1.5}});
   if(theme!=='dark')document.documentElement.setAttribute('data-theme',theme);
@@ -1061,6 +1080,23 @@ window.onload=function(){
   startLogStream();
   api('/settings/get').then(function(res){if(res&&res.settings)S.settings=res.settings;});
   api('/proxy/exclusions').then(function(res){if(res&&res.excluded){S.excludedSet=new Set(res.excluded);updExclBadge();}});
+  // Restore proxy pool and task state
+  api('/proxy/list').then(function(res){
+    if(res&&res.proxies&&res.proxies.length){
+      loadProxiesIntoTable(res.proxies);
+      var wc=S.proxies.filter(function(p){return p.status==='Working';}).length;
+      log(tr('pool_restored')+wc+'/'+S.proxies.length,'info');
+      showToast(tr('pool_restored')+wc,'ok');
+    }
+  });
+  api('/status').then(function(res){
+    if(res&&res.isRunningTask&&!S.running){
+      S.running=true; S.cancel.cancelled=false;
+      setBtn(false); showProg(res.progress?res.progress.max:0);
+      log(tr('pool_task_resumed'),'in');
+      pollResults();
+    }
+  });
   log(tr('log_loaded'),'ok');
   log(tr('ltip'),'in');
 };
