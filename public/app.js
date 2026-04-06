@@ -921,6 +921,12 @@ async function toggleAutoRotate(){
   }
   updBtns();
 }
+function syncCurProxyDisp(){
+  var cp=S.proxies.find(function(p){return p.status==='Working';});
+  var disp=$('curProxyDisp');
+  if(disp)disp.textContent=cp?cp.proxy:'N/A';
+}
+
 function doAutoRot(iv){if(!S.autoRot||iv<=0)return;S.autoTimer=setTimeout(function(){rotateProxy().then(function(){doAutoRot(iv);});},iv*1000);}
 function stopAutoRot(){
   S.autoRot=false;
@@ -929,12 +935,6 @@ function stopAutoRot(){
   api('/server/auto-rotate','POST',{enabled:false});
   syncCurProxyDisp();
   log(tr('log_auto_off'));updBtns();
-}
-
-function syncCurProxyDisp(){
-  var cp=S.proxies.find(function(p){return p.status==='Working';});
-  var disp=$('curProxyDisp');
-  if(disp)disp.textContent=cp?cp.proxy:'N/A';
 }
 
 function testProxy(){openTestModal();}
@@ -955,22 +955,27 @@ async function runProxyTest(){
   var url=sel&&sel.value!=='custom'?sel.value:(ci?ci.value.trim():'');
   if(!url){return;}
   var rb=$('testRunBtn');if(rb)rb.disabled=true;
-  var rd=$('testResult');if(rd)rd.innerHTML='<span style="opacity:.6">'+tr('test_running')+'</span>';
+  var rd=$('testResult');
+  if(rd){rd.textContent='';var si=document.createElement('span');si.style.opacity='.6';si.textContent=tr('test_running');rd.appendChild(si);}
   try{
     var res=await api('/server/test?url='+encodeURIComponent(url),'GET');
     if(rd){
+      rd.textContent='';
+      var sp=document.createElement('span');
       if(res&&res.success){
-        var msg=tr('test_res_ok')+res.statusCode+tr('test_res_lat')+res.latencyMs+'ms';
-        if(res.exitIp)msg+=tr('test_res_ip')+res.exitIp;
-        if(res.upstreamProxy)msg+=tr('test_res_via')+res.upstreamProtocol+'://'+res.upstreamProxy;
-        rd.innerHTML='<span style="color:var(--ok)">'+msg+'</span>';
+        sp.style.color='var(--ok)';
+        var msg=tr('test_res_ok')+String(res.statusCode||'')+tr('test_res_lat')+String(res.latencyMs||0)+'ms';
+        if(res.exitIp)msg+=tr('test_res_ip')+String(res.exitIp);
+        if(res.upstreamProxy)msg+=tr('test_res_via')+String(res.upstreamProtocol||'')+'://'+String(res.upstreamProxy);
+        sp.textContent=msg;
       }else{
-        var err=res&&res.error?res.error:'unknown';
-        rd.innerHTML='<span style="color:var(--err)">'+tr('test_res_fail')+err+'</span>';
+        sp.style.color='var(--err)';
+        sp.textContent=tr('test_res_fail')+(res&&res.error?String(res.error):'unknown');
       }
+      rd.appendChild(sp);
     }
   }catch(e){
-    if(rd)rd.innerHTML='<span style="color:var(--err)">'+tr('test_res_fail')+e.message+'</span>';
+    if(rd){rd.textContent='';var se=document.createElement('span');se.style.color='var(--err)';se.textContent=tr('test_res_fail')+e.message;rd.appendChild(se);}
   }finally{
     if(rb)rb.disabled=false;
   }

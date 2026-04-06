@@ -13,6 +13,14 @@ const EventEmitter = require('events');
  */
 function parseProxyAddress(addr) {
   if (!addr || typeof addr !== 'string') return null;
+  // IPv6 格式: [::1]:8080
+  const ipv6Match = addr.match(/^\[([^\]]+)\]:(\d+)$/);
+  if (ipv6Match) {
+    const port = parseInt(ipv6Match[2], 10);
+    if (isNaN(port) || port < 1 || port > 65535) return null;
+    return { host: ipv6Match[1], port };
+  }
+  // IPv4 / hostname 格式: 1.2.3.4:8080
   const lastColon = addr.lastIndexOf(':');
   if (lastColon <= 0) return null;
   const host = addr.substring(0, lastColon);
@@ -148,7 +156,8 @@ class ProxyServer extends EventEmitter {
               resolve(socket);
             } else {
               socket.destroy();
-              reject(new Error(`HTTP CONNECT 失败: ${statusLine}`));
+              // 仅记录状态码，避免未过滤的响应内容出现在日志中
+              reject(new Error(`HTTP CONNECT 失败，状态码: ${isNaN(statusCode) ? 'unknown' : statusCode}`));
             }
           }
         };

@@ -945,7 +945,8 @@ app.post('/api/server/stop', (req, res) => {
  * 本地代理连通性测试：通过本地 SOCKS5 代理请求指定 URL
  */
 // 允许的测试 URL 白名单（同时允许通过 SSRF 检查的任意 URL）
-const SSRF_PRIVATE_RE = /^(localhost$|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0$|::1$|fc[0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i;
+// 覆盖: loopback, RFC1918, link-local, IPv6 loopback/ULA/link-local, IPv4-mapped IPv6
+const SSRF_PRIVATE_RE = /^(localhost$|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0$|::1$|::ffff:(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i;
 
 app.get('/api/server/test', async (req, res) => {
   if (!proxyServer) {
