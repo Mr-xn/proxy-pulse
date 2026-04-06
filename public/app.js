@@ -275,7 +275,7 @@ function toggleTheme() {
 }
 
 // State
-var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', desc: true, cancel: { cancelled: false }, settings: {}, excludedSet: new Set(), selectedSet: new Set() };
+var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', desc: true, cancel: { cancelled: false }, settings: {}, excludedSet: new Set(), selectedSet: new Set(), page: 0, pageSize: 100, cachedWorking: 0 };
 
 // API
 async function api(p, m, b) {
@@ -290,19 +290,40 @@ async function api(p, m, b) {
   } catch (e) { log('API Error: ' + e.message, 'er'); return null; }
  }
 
-// Log
+// Log – batched DOM updates every 200 ms to avoid layout thrashing
+var _logBuffer = [];
+var _logFlushTimer = null;
+var MAX_LOG_ENTRIES = 500;
+
+function _flushLogs() {
+  _logFlushTimer = null;
+  if (!_logBuffer.length) return;
+  var c = $('logBody');
+  if (!c) { _logBuffer = []; return; }
+  var atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+  var frag = document.createDocumentFragment();
+  var t = new Date();
+  var entries = _logBuffer.splice(0);
+  for (var i = 0; i < entries.length; i++) {
+    var item = entries[i];
+    var e = document.createElement('div');
+    e.className = 'le';
+    var cls = item.lvl === 'error' ? 'er' : item.lvl === 'success' ? 'ok' : item.lvl === 'warn' ? 'wa' : item.lvl === 'info' ? 'in' : 'n';
+    e.innerHTML = '<span class="lt">' + item.ts + '</span><span class="l' + cls + '">' + esc(item.msg) + '</span>';
+    frag.appendChild(e);
+  }
+  c.appendChild(frag);
+  // Trim oldest entries to cap DOM size
+  while (c.children.length > MAX_LOG_ENTRIES) c.removeChild(c.firstChild);
+  // Only auto-scroll if user was already at the bottom
+  if (atBottom) c.scrollTop = c.scrollHeight;
+}
+
 function log(msg, lvl) {
   if (!lvl) lvl = 'normal';
-  var c = $('logBody');
-  if (!c) return;
-  var t = new Date().toLocaleTimeString(lang === 'zh' ? 'zh-CN' : 'en-US', { hour12: false }),
-      e = document.createElement('div');
-  e.className = 'le';
-  var cls = lvl === 'error' ? 'er' : lvl === 'success' ? 'ok' : lvl === 'warn' ? 'wa' : lvl === 'info' ? 'in' : 'n';
-  e.innerHTML = '<span class="lt">' + t + '</span><span class="l' + cls + '">' + esc(msg) + '</span>';
-  c.appendChild(e);
-  c.scrollTop = c.scrollHeight;
-  if (c.children.length > 3000) c.removeChild(c.firstChild);
+  var t = new Date().toLocaleTimeString(lang === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
+  _logBuffer.push({ msg: msg, lvl: lvl, ts: t });
+  if (!_logFlushTimer) _logFlushTimer = setTimeout(_flushLogs, 200);
 }
 function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function clearLogs() { if (!confirm(tr('cclr'))) return; var c = $('logBody'); if (c) c.innerHTML = ''; showToast(tr('clog') + ' OK', 'in'); }
@@ -328,7 +349,7 @@ function setBtn(en) {
   var bc = $('btnCancel'); if (bc) bc.disabled = !en;
 }
 function updBtns() {
-  var wc = S.proxies.filter(function(p) { return p.status === 'Working'; }).length;
+  var wc = S.cachedWorking;
   var ha = S.proxies.length > 0;
   ['btnRetest','btnExport','btnServer','btnRotate','btnAutoRotate'].forEach(function(id) {
     var el = $(id); if (el) el.disabled = S.running || !ha;
@@ -372,7 +393,7 @@ function updProg(c, max) {
   var pct = max ? Math.round(c / max * 100) : 0;
   var pb = $('progBar'); if (pb) pb.style.width = pct + '%';
   setTxt('progTxt', tr('prog_progress') + c + '/' + (max || '?'));
-  setTxt('progCnt', tr('prog_working') + S.proxies.filter(function(p) { return p.status === 'Working'; }).length);
+  setTxt('progCnt', tr('prog_working') + S.cachedWorking);
 }
 function hideProg() {
   var pc = $('progC');
@@ -386,10 +407,19 @@ function trAnon(a) {
   return map[a] || a;
 }
 
-// Table
+// Table – paginated rendering (S.pageSize rows/page) with DocumentFragment batching
+var _refreshDebounceTimer = null;
+
 function refreshTable() {
-  var tb = $('tblBody'), emp = $('emptySt');
-  if (tb) tb.innerHTML = '';
+  // Debounce: skip redundant calls within 150 ms
+  if (_refreshDebounceTimer) return;
+  _refreshDebounceTimer = setTimeout(function() {
+    _refreshDebounceTimer = null;
+    _doRefreshTable();
+  }, 150);
+}
+
+function _getFilteredSorted() {
   var rf = $('regionFilter'),
       rv = rf ? rf.value : '',
       qc = $('qualityCheck'),
@@ -407,53 +437,94 @@ function refreshTable() {
     else if (['speed','score'].indexOf(S.scol) >= 0) { v = v || 0; vb = vb || 0; }
     return typeof v === 'string' ? (S.desc ? vb.localeCompare(v) : v.localeCompare(vb)) : (S.desc ? vb - v : v - vb);
   });
+  return fl;
+}
+
+function _doRefreshTable() {
+  var tb = $('tblBody'), emp = $('emptySt');
+  var fl = _getFilteredSorted();
+
+  var totalPages = Math.max(1, Math.ceil(fl.length / S.pageSize));
+  if (S.page >= totalPages) S.page = totalPages - 1;
+  var start = S.page * S.pageSize;
+  var pageSlice = fl.slice(start, start + S.pageSize);
+
+  if (tb) {
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < pageSlice.length; i++) {
+      frag.appendChild(_makeRow(pageSlice[i]));
+    }
+    tb.innerHTML = '';
+    tb.appendChild(frag);
+  }
+
   if (!fl.length) {
     if (emp) { emp.style.display = 'flex'; var et = emp.querySelector('.etext'); if (et) et.innerHTML = tr('emp').replace('\n', '<br/>'); }
   } else {
     if (emp) emp.style.display = 'none';
-    fl.forEach(function(p) {
-      if (!tb) return;
-      var row = document.createElement('tr');
-      var isExcl = S.excludedSet.has(p.proxy);
-      var isSel = S.selectedSet.has(p.proxy);
-      var cls = [];
-      if (p.status !== 'Working') cls.push('unavail');
-      if (isExcl) cls.push('excluded');
-      if (isSel) cls.push('row-sel');
-      row.className = cls.join(' ');
-      var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
-      var lt = p.status === 'Working' && p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
-      var sp = p.status === 'Working' ? (p.speed || 0).toFixed(2) : '-';
-      var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
-      var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
-      row.innerHTML =
-        '<td class="chk-cell"><input type="checkbox" ' + (isSel ? 'checked' : '') + '></td>' +
-        '<td style="font-weight:700;color:' + (p.status === 'Working' ? 'var(--accent)' : 'var(--t3)') + '">' + sc + '</td>' +
-        '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
-        '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
-        '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:' + (p.status === 'Working' ? 'var(--ok)' : '') + '">' + esc(p.proxy) + '</td>' +
-        '<td>' + lt + '</td><td>' + sp + '</td>' +
-        '<td>' + esc(p.location || '-') + '</td>';
-      row.dataset.addr = p.proxy;
-      var cb = row.querySelector('input[type=checkbox]');
-      if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
-      row.ondblclick = function() { copySingle(p.proxy); };
-      row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
-      tb.appendChild(row);
-    });
   }
+
+  _updatePagination(fl.length, totalPages);
+
   // 更新全选框状态
   var chkAll = $('chkAll');
   if (chkAll) {
-    var visAddrs = fl.map(function(p){return p.proxy;});
+    var visAddrs = pageSlice.map(function(p){return p.proxy;});
     var allSel = visAddrs.length > 0 && visAddrs.every(function(a){return S.selectedSet.has(a);});
     chkAll.checked = allSel;
     chkAll.indeterminate = !allSel && visAddrs.some(function(a){return S.selectedSet.has(a);});
   }
-  // 更新排除徽标
   updExclBadge();
   upRegion();
   updBtns();
+}
+
+function _makeRow(p) {
+  var row = document.createElement('tr');
+  var isExcl = S.excludedSet.has(p.proxy);
+  var isSel = S.selectedSet.has(p.proxy);
+  var cls = [];
+  if (p.status !== 'Working') cls.push('unavail');
+  if (isExcl) cls.push('excluded');
+  if (isSel) cls.push('row-sel');
+  row.className = cls.join(' ');
+  var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
+  var lt = p.status === 'Working' && p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
+  var sp = p.status === 'Working' ? (p.speed || 0).toFixed(2) : '-';
+  var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
+  var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
+  row.innerHTML =
+    '<td class="chk-cell"><input type="checkbox" ' + (isSel ? 'checked' : '') + '></td>' +
+    '<td style="font-weight:700;color:' + (p.status === 'Working' ? 'var(--accent)' : 'var(--t3)') + '">' + sc + '</td>' +
+    '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
+    '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
+    '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:' + (p.status === 'Working' ? 'var(--ok)' : '') + '">' + esc(p.proxy) + '</td>' +
+    '<td>' + lt + '</td><td>' + sp + '</td>' +
+    '<td>' + esc(p.location || '-') + '</td>';
+  row.dataset.addr = p.proxy;
+  var cb = row.querySelector('input[type=checkbox]');
+  if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
+  row.ondblclick = function() { copySingle(p.proxy); };
+  row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
+  return row;
+}
+
+function _updatePagination(total, totalPages) {
+  var pc = $('pgCont');
+  if (!pc) return;
+  if (totalPages <= 1) { pc.style.display = 'none'; return; }
+  pc.style.display = 'flex';
+  var info = $('pgInfo'), prev = $('pgPrev'), next = $('pgNext');
+  if (info) info.textContent = (S.page + 1) + ' / ' + totalPages + '  (' + total + ')';
+  if (prev) prev.disabled = S.page === 0;
+  if (next) next.disabled = S.page >= totalPages - 1;
+}
+
+function pgPrev() { if (S.page > 0) { S.page--; _doRefreshTable(); } }
+function pgNext() {
+  var fl = _getFilteredSorted();
+  var totalPages = Math.max(1, Math.ceil(fl.length / S.pageSize));
+  if (S.page < totalPages - 1) { S.page++; _doRefreshTable(); }
 }
 
 // 地区下拉
@@ -587,12 +658,12 @@ async function excludeSelected() {
   var toExcl = addrs.filter(function(a){ return !S.excludedSet.has(a); });
   var toUnexcl = addrs.filter(function(a){ return S.excludedSet.has(a); });
   if (toExcl.length) {
-    await api('/proxy/exclusions/add', 'POST', { proxies: toExcl });
-    toExcl.forEach(function(a){ S.excludedSet.add(a); });
+    var r1 = await api('/proxy/exclusions/add', 'POST', { proxies: toExcl });
+    if (r1 != null) toExcl.forEach(function(a){ S.excludedSet.add(a); });
   }
   if (toUnexcl.length) {
-    await api('/proxy/exclusions/remove', 'POST', { proxies: toUnexcl });
-    toUnexcl.forEach(function(a){ S.excludedSet.delete(a); });
+    var r2 = await api('/proxy/exclusions/remove', 'POST', { proxies: toUnexcl });
+    if (r2 != null) toUnexcl.forEach(function(a){ S.excludedSet.delete(a); });
   }
   S.selectedSet.clear();
   var msg = toExcl.length ? tr('texcl') + toExcl.length : '';
@@ -604,10 +675,15 @@ async function excludeSelected() {
 async function clearExclusions() {
   if (S.excludedSet.size === 0) return;
   if (!confirm(tr('cclear_excl'))) return;
-  await api('/proxy/exclusions/clear', 'POST');
-  S.excludedSet.clear();
-  showToast(tr('excl_cleared'), 'in');
-  refreshTable();
+  try {
+    var res = await api('/proxy/exclusions/clear', 'POST');
+    if (res == null) { showToast(tr('excl_clear_fail') || 'Failed to clear exclusions', 'er'); return; }
+    S.excludedSet.clear();
+    showToast(tr('excl_cleared'), 'in');
+    refreshTable();
+  } catch(e) {
+    showToast(tr('excl_clear_fail') || 'Failed to clear exclusions', 'er');
+  }
 }
 
 function updExclBadge() {
@@ -665,40 +741,23 @@ async function pollResults() {
   finalizeVal();
 }
 
-/** 渲染单行并追加到表格 */
+/** 渲染单行并追加到表格 – 仅在第一页且未超出 pageSize 时插入 DOM */
 function appendProxyRow(p) {
   var tb = $('tblBody'), emp = $('emptySt');
   if (!tb) return;
   if (emp) emp.style.display = 'none';
-  var row = document.createElement('tr');
-  row.className = 'row-new';
-  var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
-  var lt = p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
-  var sp = (p.speed || 0).toFixed(2);
-  var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
-  var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
-  row.innerHTML =
-    '<td class="chk-cell"><input type="checkbox"></td>' +
-    '<td style="font-weight:700;color:var(--accent)">' + sc + '</td>' +
-    '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
-    '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
-    '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:var(--ok)">' + esc(p.proxy) + '</td>' +
-    '<td>' + lt + '</td><td>' + sp + '</td>' +
-    '<td>' + esc(p.location || '-') + '</td>';
-  row.dataset.addr = p.proxy;
-  var cb = row.querySelector('input[type=checkbox]');
-  if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
-  row.ondblclick = function() { copySingle(p.proxy); };
-  row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
+  // Only live-insert on page 0 and when within the page limit
+  if (S.page !== 0 || tb.children.length >= S.pageSize) return;
+  var row = _makeRow(p);
+  row.classList.add('row-new');
   tb.insertBefore(row, tb.firstChild);
-  // 动画结束后移除class
   setTimeout(function(){ row.classList.remove('row-new'); }, 600);
-  upRegion();
 }
 
-/** 更新可用/总数统计（带loading闪烁效果） */
+/** 更新可用/总数统计（缓存 Working 计数避免重复 filter） */
 function updStats() {
-  var wc = S.proxies.filter(function(p){return p.status==='Working';}).length;
+  S.cachedWorking = S.proxies.filter(function(p){return p.status==='Working';}).length;
+  var wc = S.cachedWorking;
   var tot = S.proxies.length;
   var ts = $('tblStats');
   if (ts) {
@@ -712,6 +771,7 @@ function updStats() {
 
 function finalizeVal() {
   S.running=false; setBtn(true);
+  updStats(); // refresh cached working count before using it
   // 进度条保留最终状态，显示完成信息
   var pc = $('progC');
   if (pc) {
@@ -719,7 +779,7 @@ function finalizeVal() {
     setTxt('progTxt', tr('log_complete'));
   }
   refreshTable();
-  var w=S.proxies.filter(function(p){return p.status==='Working';}).length;
+  var w = S.cachedWorking;
   var tot=S.proxies.length;
   log(tr('log_complete'));
   log(w+tr('log_avail'), w>0?'ok':'wa');
@@ -756,7 +816,7 @@ async function clearAll() {
   if(S.running){showToast(tr('wait_task'),'wa');return;}
   if(!confirm(tr('cclear')))return;
   await api('/proxy/clear','POST');
-  S.proxies=[];S.dSet.clear();S.selectedSet.clear();stopAutoRot();refreshTable();
+  S.proxies=[];S.dSet.clear();S.selectedSet.clear();S.page=0;S.cachedWorking=0;stopAutoRot();refreshTable();
   log(tr('log_cleared'),'wa');
   showToast(tr('tclr'),'in');
 }
@@ -938,7 +998,12 @@ function showAuthOverlay(mode) {
   setTxt('authBtn', isSetup ? tr('auth_btn_setup') : tr('auth_btn_login'));
   var cf = $('authConfirmField'); if (cf) cf.style.display = isSetup ? '' : 'none';
   var err = $('authErr'); if (err) err.textContent = '';
-  var pw = $('authPw'); if (pw) { pw.value = ''; pw.focus(); }
+  var pw = $('authPw');
+  if (pw) {
+    pw.setAttribute('autocomplete', isSetup ? 'new-password' : 'current-password');
+    pw.value = '';
+    pw.focus();
+  }
   var cpw = $('authConfirmPw'); if (cpw) cpw.value = '';
 }
 
@@ -1048,7 +1113,8 @@ async function saveSettings() {
     if (!r2 || !r2.success) { if (se) se.textContent = r2 && r2.error ? r2.error : tr('settings_err_cur_pw'); return; }
     closeSettings();
     showToast(tr('settings_pw_changed'), 'wa');
-    showAuthOverlay('login');
+    var stillAuthenticated = await fetch('/api/auth/status').then(function(r){return r.json();}).then(function(r){return r && r.authenticated;}).catch(function(){return false;});
+    if (!stillAuthenticated) showAuthOverlay('login');
     return;
   }
 

@@ -379,8 +379,13 @@ function log(message, level = 'normal') {
 
 // ==================== API Routes ====================
 
+// Performance constants
+const MAX_RESULTS_BUFFER = 5000;   // cap pending validation results in memory
+const MAX_POOL_SIZE = 50000;       // hard cap on rotator proxy list
+const SSE_LOG_INTERVAL_MS = 50;   // flush batched SSE logs every 50 ms
+
 /**
- * 获取日志流 (SSE)
+ * 获取日志流 (SSE) – 日志以 50ms 为批次发送，防止高频验证时刷屏压垮客户端
  */
 app.get('/api/logs/stream', (req, res) => {
   res.writeHead(200, {
@@ -394,17 +399,29 @@ app.get('/api/logs/stream', (req, res) => {
   const welcomeMsg = { message: '日志流已连接...', level: 'info' };
   res.write(`data: ${JSON.stringify(welcomeMsg)}\n\n`);
 
-  const onLog = (data) => {
+  let logQueue = [];
+  let closed = false;
+
+  const flushTimer = setInterval(() => {
+    if (closed || logQueue.length === 0) return;
+    const batch = logQueue.splice(0);
     try {
-      res.write(`data: ${data}\n\n`);
+      for (const data of batch) res.write(`data: ${data}\n\n`);
     } catch (e) {
       // Client disconnected
     }
+  }, SSE_LOG_INTERVAL_MS);
+
+  const onLog = (data) => {
+    if (!closed) logQueue.push(data);
   };
 
   state.logEmitter.on('log', onLog);
 
   req.on('close', () => {
+    closed = true;
+    clearInterval(flushTimer);
+    logQueue = [];
     state.logEmitter.removeListener('log', onLog);
   });
 });
@@ -477,11 +494,17 @@ function handleValidationResult(result) {
   }
 
   state.progress.current++;
-  state.resultsBuffer.push(result);
 
-  // 添加到轮换器（去重）
+  // Cap in-memory results buffer to prevent OOM when frontend is slow/disconnected
+  if (state.resultsBuffer.length < MAX_RESULTS_BUFFER) {
+    state.resultsBuffer.push(result);
+  }
+
+  // 添加到轮换器（去重），并守卫代理池上限
   if (result.status === 'Working') {
-    rotator.addProxy(result);
+    if (rotator.getAllProxiesForRevalidation().length < MAX_POOL_SIZE) {
+      rotator.addProxy(result);
+    }
   }
 }
 
