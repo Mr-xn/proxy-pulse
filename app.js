@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { EventEmitter } = require('events');
+const crypto = require('crypto');
 
 // 导入自定义模块
 const ProxyFetcher = require('./modules/fetcher');
@@ -26,6 +27,7 @@ const app = express();
 const PORT = process.env.PORT || 3456;
 const HTTP_PROXY_PORT = 1801;
 const SOCKS5_PROXY_PORT = 1800;
+const POOL_FILE = path.join(__dirname, 'pool.json');
 
 // 中间件
 app.use(express.json({ limit: '50mb' }));
@@ -67,9 +69,229 @@ const state = {
       failureThreshold: 3,
       autoRetestEnabled: false,
       autoRetestInterval: 10
+    },
+    auth: {
+      enabled: false,
+      passwordHash: null,
+      passwordSalt: null
+    },
+    proxyAuth: {
+      enabled: false,
+      username: 'proxy',
+      passwordHash: null,
+      passwordSalt: null
     }
   }
 };
+
+// ==================== Config ====================
+function loadConfig() {
+  try {
+    const configPath = path.join(__dirname, 'config.json');
+    if (fs.existsSync(configPath)) {
+      const saved = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (saved.general) Object.assign(state.settings.general, saved.general);
+      if (saved.auth) Object.assign(state.settings.auth, saved.auth);
+      if (saved.proxyAuth) Object.assign(state.settings.proxyAuth, saved.proxyAuth);
+    }
+  } catch (e) {}
+}
+
+function saveConfig() {
+  try {
+    fs.writeFileSync(
+      path.join(__dirname, 'config.json'),
+      JSON.stringify(state.settings, null, 2),
+      'utf-8'
+    );
+  } catch (e) {
+    log(`保存设置失败: ${e.message}`, 'error');
+  }
+}
+
+// ==================== Pool Persistence ====================
+let _savePoolTimer = null;
+
+function savePool() {
+  if (_savePoolTimer) clearTimeout(_savePoolTimer);
+  _savePoolTimer = setTimeout(() => {
+    try {
+      fs.writeFileSync(POOL_FILE, JSON.stringify({
+        proxies: rotator.getAllProxiesForRevalidation(),
+        excluded: rotator.getExcludedProxies()
+      }, null, 2), 'utf-8');
+    } catch (e) {
+      log(`保存代理池失败: ${e.message}`, 'error');
+    }
+  }, 2000);
+}
+
+function loadPool() {
+  try {
+    if (fs.existsSync(POOL_FILE)) {
+      const data = JSON.parse(fs.readFileSync(POOL_FILE, 'utf-8'));
+      if (data.proxies && Array.isArray(data.proxies)) {
+        for (const p of data.proxies) rotator.addProxy(p);
+      }
+      if (data.excluded && Array.isArray(data.excluded)) {
+        rotator.addExclusion(data.excluded);
+      }
+      const cnt = rotator.getActiveProxiesCount();
+      if (cnt > 0) {
+        log(`已从缓存恢复 ${cnt} 个可用代理`, 'info');
+      }
+    }
+  } catch (e) {
+    log(`加载代理池缓存失败: ${e.message}`, 'warn');
+  }
+}
+
+// ==================== Auth ====================
+const sessions = new Map();
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Simple in-memory rate limiter for auth endpoints
+const loginAttempts = new Map();
+const RATE_MAX = 10;
+const RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function rateLimitAuth(req, res, next) {
+  const ip = (req.ip || req.socket.remoteAddress || 'unknown').replace('::ffff:', '');
+  const now = Date.now();
+  let rec = loginAttempts.get(ip);
+  if (!rec || now > rec.resetAt) {
+    rec = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    loginAttempts.set(ip, rec);
+  }
+  if (rec.count >= RATE_MAX) {
+    return res.status(429).json({ error: `请求过于频繁，${Math.ceil((rec.resetAt - now) / 1000)}秒后重试` });
+  }
+  rec.count++;
+  next();
+}
+
+function clearRateLimit(req) {
+  const ip = (req.ip || req.socket.remoteAddress || 'unknown').replace('::ffff:', '');
+  loginAttempts.delete(ip);
+}
+
+function randomHex(bytes) {
+  return crypto.randomBytes(bytes || 32).toString('hex');
+}
+
+// Use scrypt (proper password KDF) for password hashing
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+function parseCookies(req) {
+  const cookies = {};
+  const header = req.headers.cookie;
+  if (!header) return cookies;
+  header.split(';').forEach(c => {
+    const parts = c.trim().split('=');
+    cookies[parts[0].trim()] = parts.slice(1).join('=').trim();
+  });
+  return cookies;
+}
+
+function createSession() {
+  const token = randomHex(32);
+  sessions.set(token, { expiry: Date.now() + SESSION_TTL });
+  return token;
+}
+
+function validateSession(token) {
+  if (!token) return false;
+  const s = sessions.get(token);
+  if (!s || Date.now() > s.expiry) { sessions.delete(token); return false; }
+  return true;
+}
+
+function isWebAuthEnabled() {
+  return !!(state.settings.auth && state.settings.auth.enabled && state.settings.auth.passwordHash);
+}
+
+function isAuthenticated(req) {
+  if (!isWebAuthEnabled()) return true;
+  return validateSession(parseCookies(req).auth_token);
+}
+
+// Auth middleware for all /api routes
+app.use('/api', (req, res, next) => {
+  const pub = ['/auth/status', '/auth/setup', '/auth/login', '/auth/logout'];
+  if (pub.includes(req.path)) return next();
+  if (!isAuthenticated(req)) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+});
+
+// ==================== Auth Routes ====================
+
+app.get('/api/auth/status', (req, res) => {
+  const hasPassword = !!(state.settings.auth && state.settings.auth.passwordHash);
+  res.json({ hasPassword, authenticated: !isWebAuthEnabled() || isAuthenticated(req) });
+});
+
+app.post('/api/auth/setup', rateLimitAuth, (req, res) => {
+  if (state.settings.auth && state.settings.auth.passwordHash) {
+    return res.status(400).json({ error: '密码已设置' });
+  }
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: '密码至少需要6位' });
+  }
+  const salt = randomHex(32);
+  state.settings.auth = { enabled: true, passwordHash: hashPassword(password, salt), passwordSalt: salt };
+  saveConfig();
+  clearRateLimit(req);
+  const token = createSession();
+  res.setHeader('Set-Cookie', `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}; Path=/`);
+  res.json({ success: true });
+});
+
+app.post('/api/auth/login', rateLimitAuth, (req, res) => {
+  if (!isWebAuthEnabled()) { clearRateLimit(req); return res.json({ success: true }); }
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: '请输入密码' });
+  const { passwordHash, passwordSalt } = state.settings.auth;
+  if (hashPassword(password, passwordSalt) !== passwordHash) {
+    return res.status(401).json({ error: '密码错误' });
+  }
+  clearRateLimit(req);
+  const token = createSession();
+  res.setHeader('Set-Cookie', `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}; Path=/`);
+  res.json({ success: true });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const cookies = parseCookies(req);
+  if (cookies.auth_token) sessions.delete(cookies.auth_token);
+  res.setHeader('Set-Cookie', 'auth_token=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/');
+  res.json({ success: true });
+});
+
+app.post('/api/auth/change-password', rateLimitAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (isWebAuthEnabled()) {
+    const { passwordHash, passwordSalt } = state.settings.auth;
+    if (hashPassword(currentPassword, passwordSalt) !== passwordHash) {
+      return res.status(401).json({ error: '当前密码错误' });
+    }
+  }
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: '新密码至少需要6位' });
+  }
+  const salt = randomHex(32);
+  state.settings.auth.enabled = true;
+  state.settings.auth.passwordHash = hashPassword(newPassword, salt);
+  state.settings.auth.passwordSalt = salt;
+  sessions.clear();
+  saveConfig();
+  clearRateLimit(req);
+  const token = createSession();
+  res.setHeader('Set-Cookie', `auth_token=${token}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}; Path=/`);
+  res.json({ success: true });
+});
 
 // ==================== Log System ====================
 function log(message, level = 'normal') {
@@ -206,6 +428,7 @@ function finishTask() {
   const totalInRotator = rotator.getAllProxiesForRevalidation().length;
   log(`\n${'='.repeat(20)} 任务全部完成 ${'='.repeat(20)}`);
   log(`代理池现有 ${workingCount} 个可用的代理。`, workingCount > 0 ? 'success' : 'warn');
+  savePool();
 }
 
 /**
@@ -358,10 +581,8 @@ app.post('/api/proxy/clear', (req, res) => {
   rotator.clear();
   state.resultsBuffer = []; // Also clear the buffer since we cleared everything
   
-  // Clear displayed proxies tracking by removing all from buffer
-  // The frontend will also need to clear its list
-  
   log('所有代理已清空');
+  savePool();
   res.json({ success: true });
 });
 
@@ -448,7 +669,7 @@ app.post('/api/proxy/revalidate', async (req, res) => {
 app.get('/api/proxy/export', (req, res) => {
   const format = (req.query.format || 'txt').toLowerCase();
   const allProxies = rotator.getAllProxiesForRevalidation();
-  const working = allProxies.filter(p => p.status === 'Working');
+  const working = allProxies.filter(p => p.status === 'Working' && !rotator.isExcluded(p.proxy));
 
   if (working.length === 0) {
     return res.json({ success: false, error: '没有可用的代理可以导出' });
@@ -485,6 +706,51 @@ app.get('/api/proxy/export', (req, res) => {
     data: content,
     contentType
   });
+});
+
+/**
+ * 获取排除列表
+ */
+app.get('/api/proxy/exclusions', (req, res) => {
+  res.json({ excluded: rotator.getExcludedProxies() });
+});
+
+/**
+ * 添加代理到排除列表（支持多选）
+ */
+app.post('/api/proxy/exclusions/add', (req, res) => {
+  const { proxies } = req.body;
+  if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
+    return res.json({ success: false, error: '未指定代理地址' });
+  }
+  rotator.addExclusion(proxies);
+  log(`已将 ${proxies.length} 个代理加入排除列表`);
+  savePool();
+  res.json({ success: true, count: proxies.length });
+});
+
+/**
+ * 从排除列表移除代理（支持多选）
+ */
+app.post('/api/proxy/exclusions/remove', (req, res) => {
+  const { proxies } = req.body;
+  if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
+    return res.json({ success: false, error: '未指定代理地址' });
+  }
+  rotator.removeExclusion(proxies);
+  log(`已将 ${proxies.length} 个代理从排除列表移除`);
+  savePool();
+  res.json({ success: true });
+});
+
+/**
+ * 清空排除列表
+ */
+app.post('/api/proxy/exclusions/clear', (req, res) => {
+  rotator.clearExclusions();
+  log('排除列表已清空');
+  savePool();
+  res.json({ success: true });
 });
 
 /**
@@ -526,6 +792,7 @@ app.post('/api/proxy/remove', (req, res) => {
   if (!proxy) return res.json({ success: false, error: '未指定代理地址' });
 
   const removed = rotator.removeProxy(proxy);
+  if (removed) savePool();
   res.json({ success: removed });
 });
 
@@ -546,10 +813,16 @@ app.post('/api/server/start', (req, res) => {
     rotator.getNextProxy();
   }
 
+  const ac = state.settings.proxyAuth;
+  const authConfig = (ac && ac.enabled && ac.passwordHash)
+    ? { enabled: true, username: ac.username || 'proxy', passwordHash: ac.passwordHash, passwordSalt: ac.passwordSalt }
+    : { enabled: false };
+
   proxyServer = new ProxyServer(
     '127.0.0.1', HTTP_PROXY_PORT,
     '127.0.0.1', SOCKS5_PROXY_PORT,
-    rotator
+    rotator,
+    authConfig
   );
 
   // 监听服务日志
@@ -604,30 +877,55 @@ app.get('/api/settings/get', (req, res) => {
   try {
     const configPath = path.join(__dirname, 'config.json');
     if (fs.existsSync(configPath)) {
-      const savedSettings = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      Object.assign(state.settings, savedSettings);
+      const saved = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (saved.general) Object.assign(state.settings.general, saved.general);
+      if (saved.auth) Object.assign(state.settings.auth, saved.auth);
+      if (saved.proxyAuth) Object.assign(state.settings.proxyAuth, saved.proxyAuth);
     }
   } catch (e) {}
 
-  res.json({ settings: state.settings });
+  // 返回时不包含敏感哈希数据
+  res.json({
+    settings: {
+      general: state.settings.general,
+      auth: {
+        enabled: state.settings.auth.enabled,
+        hasPassword: !!state.settings.auth.passwordHash
+      },
+      proxyAuth: {
+        enabled: state.settings.proxyAuth.enabled,
+        username: state.settings.proxyAuth.username || ''
+      }
+    }
+  });
 });
 
 app.post('/api/settings/save', (req, res) => {
   const { settings } = req.body;
   if (settings) {
-    Object.assign(state.settings, settings);
-    
-    // 保存到文件
-    try {
-      fs.writeFileSync(
-        path.join(__dirname, 'config.json'), 
-        JSON.stringify(state.settings, null, 2), 
-        'utf-8'
-      );
-      log('设置已保存');
-    } catch (e) {
-      log(`保存设置失败: ${e.message}`, 'error');
+    if (settings.general) Object.assign(state.settings.general, settings.general);
+
+    if (settings.proxyAuth) {
+      // Hash proxy password if provided
+      if (settings.proxyAuth.password) {
+        const salt = randomHex(32);
+        settings.proxyAuth.passwordHash = hashPassword(settings.proxyAuth.password, salt);
+        settings.proxyAuth.passwordSalt = salt;
+      }
+      const { password, ...safeProxyAuth } = settings.proxyAuth;
+      Object.assign(state.settings.proxyAuth, safeProxyAuth);
     }
+
+    // Restart proxy server if running with updated auth config
+    if (proxyServer && settings.proxyAuth) {
+      const ac = state.settings.proxyAuth;
+      proxyServer.updateAuth(ac.enabled && ac.passwordHash
+        ? { enabled: true, username: ac.username || 'proxy', passwordHash: ac.passwordHash, passwordSalt: ac.passwordSalt }
+        : { enabled: false });
+    }
+
+    saveConfig();
+    log('设置已保存');
   }
   res.json({ success: true });
 });
@@ -638,6 +936,19 @@ app.post('/api/settings/save', (req, res) => {
 app.get('/api/proxy/list', (req, res) => {
   const proxies = rotator.getAllProxiesForRevalidation();
   res.json({ proxies });
+});
+
+/**
+ * 获取应用运行状态（供前端刷新后恢复）
+ */
+app.get('/api/status', (req, res) => {
+  res.json({
+    isRunningTask: state.isRunningTask,
+    progress: state.progress,
+    taskFinished: state.taskFinished,
+    proxyCount: rotator.getActiveProxiesCount(),
+    serverRunning: !!proxyServer
+  });
 });
 
 // ==================== Server Start ====================
@@ -655,6 +966,12 @@ app.listen(PORT, () => {
 
   // 初始化检查器（获取本机IP）
   checker.initializePublicIp(log);
+
+  // 加载配置
+  loadConfig();
+
+  // 恢复代理池缓存
+  loadPool();
 
   // 创建 temp 目录
   const tempDir = path.join(__dirname, 'temp');

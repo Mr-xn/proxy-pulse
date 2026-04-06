@@ -3,15 +3,17 @@
  * 提供 HTTP (端口 1801) 和 SOCKS5 (端口 1800) 双协议代理服务
  */
 const net = require('net');
+const crypto = require('crypto');
 const { SocksClient } = require('socks');
 const EventEmitter = require('events');
 
 class ProxyServer extends EventEmitter {
-  constructor(httpHost, httpPort, socks5Host, socks5Port, rotator) {
+  constructor(httpHost, httpPort, socks5Host, socks5Port, rotator, authConfig) {
     super();
     this._rotator = rotator;
     this._running = false;
     this.rotatePerRequest = false;
+    this._authConfig = authConfig || { enabled: false };
 
     // HTTP 服务
     this._httpHost = httpHost;
@@ -32,6 +34,17 @@ class ProxyServer extends EventEmitter {
     this.rotatePerRequest = perRequest;
     const mode = perRequest ? '逐请求轮换' : '固定当前';
     this.log(`轮换模式切换为: ${mode}`);
+  }
+
+  updateAuth(authConfig) {
+    this._authConfig = authConfig || { enabled: false };
+  }
+
+  _checkProxyAuth(username, password) {
+    if (!this._authConfig || !this._authConfig.enabled) return true;
+    if (!this._authConfig.passwordHash) return true;
+    const hash = crypto.scryptSync(password, this._authConfig.passwordSalt, 64).toString('hex');
+    return username === this._authConfig.username && hash === this._authConfig.passwordHash;
   }
 
   /**
@@ -142,6 +155,32 @@ class ProxyServer extends EventEmitter {
       const firstLine = requestData.toString().split('\r\n')[0];
       const [method, urlStr] = firstLine.split(' ');
 
+      // Check proxy authentication if enabled
+      if (this._authConfig && this._authConfig.enabled && this._authConfig.passwordHash) {
+        const authMatch = requestData.toString().match(/Proxy-Authorization:\s*Basic\s+([^\r\n]+)/i);
+        if (!authMatch) {
+          clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="ProxyPulse"\r\nContent-Length: 0\r\nProxy-Connection: close\r\n\r\n');
+          clientSocket.end();
+          return;
+        }
+        let user = '', pass = '';
+        try {
+          const decoded = Buffer.from(authMatch[1].trim(), 'base64').toString();
+          const colonIdx = decoded.indexOf(':');
+          user = colonIdx >= 0 ? decoded.slice(0, colonIdx) : decoded;
+          pass = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : '';
+        } catch (e) {
+          clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="ProxyPulse"\r\nContent-Length: 0\r\nProxy-Connection: close\r\n\r\n');
+          clientSocket.end();
+          return;
+        }
+        if (!this._checkProxyAuth(user, pass)) {
+          clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="ProxyPulse"\r\nContent-Length: 0\r\nProxy-Connection: close\r\n\r\n');
+          clientSocket.end();
+          return;
+        }
+      }
+
       let targetHost, targetPort;
 
       if (method === 'CONNECT') {
@@ -205,10 +244,43 @@ class ProxyServer extends EventEmitter {
       if (!greeting || greeting.length < 2 || greeting[0] !== 0x05) return;
       
       const nmethods = greeting[1];
-      await this._recvWithTimeout(clientSocket, nmethods); // 丢弃方法列表
+      const methodsBuf = nmethods > 0 ? await this._recvWithTimeout(clientSocket, nmethods) : Buffer.alloc(0);
 
-      // 发送：选择无认证方式
-      clientSocket.write(Buffer.from([0x05, 0x00]));
+      const authEnabled = !!(this._authConfig && this._authConfig.enabled && this._authConfig.passwordHash);
+
+      if (authEnabled) {
+        // Require username/password auth (method 0x02)
+        const methods = Array.from(methodsBuf);
+        if (!methods.includes(0x02)) {
+          clientSocket.write(Buffer.from([0x05, 0xFF])); // No acceptable methods
+          return;
+        }
+        clientSocket.write(Buffer.from([0x05, 0x02]));
+
+        // Auth sub-negotiation (RFC 1929)
+        const authVer = await this._recvWithTimeout(clientSocket, 1, 10000);
+        if (!authVer || authVer[0] !== 0x01) return;
+
+        const ulenBuf = await this._recvWithTimeout(clientSocket, 1, 10000);
+        const ulen = ulenBuf[0];
+        const userBuf = ulen > 0 ? await this._recvWithTimeout(clientSocket, ulen, 10000) : Buffer.alloc(0);
+
+        const plenBuf = await this._recvWithTimeout(clientSocket, 1, 10000);
+        const plen = plenBuf[0];
+        const passBuf = plen > 0 ? await this._recvWithTimeout(clientSocket, plen, 10000) : Buffer.alloc(0);
+
+        const receivedUser = userBuf.toString('utf-8');
+        const receivedPass = passBuf.toString('utf-8');
+
+        if (!this._checkProxyAuth(receivedUser, receivedPass)) {
+          clientSocket.write(Buffer.from([0x01, 0x01])); // Auth failed
+          return;
+        }
+        clientSocket.write(Buffer.from([0x01, 0x00])); // Auth success
+      } else {
+        // No auth required
+        clientSocket.write(Buffer.from([0x05, 0x00]));
+      }
 
       // 第二步：读取连接请求
       const connReq = await this._recvWithTimeout(clientSocket, 4, 10000);

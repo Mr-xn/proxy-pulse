@@ -16,6 +16,9 @@ class ProxyRotator extends EventEmitter {
     
     // 轮换索引（按区域+质量组合）
     this.indices = {};
+
+    // 全局排除列表
+    this.excludedProxies = new Set();
   }
 
   /**
@@ -25,6 +28,43 @@ class ProxyRotator extends EventEmitter {
     this.allProxies = [];
     this.currentProxy = null;
     this.indices = {};
+  }
+
+  /**
+   * 添加代理到排除列表（支持单个或多个）
+   */
+  addExclusion(proxyAddresses) {
+    const list = Array.isArray(proxyAddresses) ? proxyAddresses : [proxyAddresses];
+    list.forEach(a => this.excludedProxies.add(a));
+  }
+
+  /**
+   * 从排除列表中移除代理（支持单个或多个）
+   */
+  removeExclusion(proxyAddresses) {
+    const list = Array.isArray(proxyAddresses) ? proxyAddresses : [proxyAddresses];
+    list.forEach(a => this.excludedProxies.delete(a));
+  }
+
+  /**
+   * 清空排除列表
+   */
+  clearExclusions() {
+    this.excludedProxies.clear();
+  }
+
+  /**
+   * 获取排除列表（数组形式）
+   */
+  getExcludedProxies() {
+    return [...this.excludedProxies];
+  }
+
+  /**
+   * 判断某个代理是否在排除列表中
+   */
+  isExcluded(proxyAddress) {
+    return this.excludedProxies.has(proxyAddress);
   }
 
   /**
@@ -198,6 +238,7 @@ class ProxyRotator extends EventEmitter {
   _getFilteredCandidates() {
     return this.allProxies.filter(p => {
       if (p.status !== 'Working') return false;
+      if (this.excludedProxies.has(p.proxy)) return false;
 
       const regionMatch = (this.filterRegion === 'All') || 
                           (p.location === this.filterRegion);

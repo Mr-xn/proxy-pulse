@@ -53,11 +53,19 @@ const T = {
     log_loaded: 'ProxyPulse 加载成功 ✅',
     // 右键菜单
     ctx_use: '使用此代理', ctx_del: '删除', ctx_copy: '复制地址',
+    ctx_excl: '排除此代理', ctx_unexcl: '取消排除',
     // 弹窗
     done_fmt: '完成！可用: ',
     done_total: ' / 总计: ',
     fmt_choose: '选择导出格式 (txt/csv/json):',
     fmt_txt: 'txt',
+    // 排除功能
+    excl_sel: '排除选中', excl_clr: '清除排除',
+    no_sel: '请先勾选代理',
+    texcl: '已排除 ', tunexcl: '已取消排除 ',
+    excl_cnt: '个已排除',
+    excl_cleared: '排除列表已清空',
+    cclear_excl: '确定要清空排除列表吗？',
     // 其他
     no_proxy: '无可用代理',
     empty_pool: '代理池为空',
@@ -69,6 +77,24 @@ const T = {
     import_fail: '导入失败',
     ms: 'ms', sec_hint: 's',
     port_info: 'SOCKS5:1800 / HTTP:1801',
+    // Auth
+    auth_setup_title: '设置访问密码', auth_setup_sub: '首次使用，请设置一个登录密码来保护您的控制面板。',
+    auth_login_title: '登录', auth_login_sub: '请输入密码以访问 ProxyPulse 控制面板。',
+    auth_pw_label: '密码', auth_confirm_label: '确认密码', auth_btn_setup: '设置密码',
+    auth_btn_login: '登录', auth_err_short: '密码至少需要6位', auth_err_mismatch: '两次密码不一致',
+    auth_err_wrong: '密码错误', auth_logout: '退出登录',
+    // Settings
+    settings_title: '设置', settings_general: '通用设置', settings_auth: 'Web 面板认证',
+    settings_proxy_auth: '本地代理认证', settings_threads: '验证线程数', settings_fail_thr: '失败阈值（次）',
+    settings_auth_enable: '启用密码保护', settings_cur_pw: '当前密码', settings_new_pw: '新密码（留空不改）',
+    settings_cfm_pw: '确认新密码', settings_proxy_auth_enable: '启用代理认证', settings_proxy_user: '用户名',
+    settings_proxy_pw: '密码（留空不改）', settings_cancel: '取消', settings_save: '保存',
+    settings_saved: '设置已保存', settings_pw_changed: '密码已更新，请重新登录',
+    settings_err_cur_pw: '当前密码错误', settings_err_short: '密码至少需要6位',
+    settings_err_mismatch: '两次密码不一致',
+    // Pool restore
+    pool_restored: '已恢复代理池：',
+    pool_task_resumed: '任务运行中，正在继续监听...',
   },
   en: {
     t: 'ProxyPulse',
@@ -121,11 +147,19 @@ const T = {
     log_loaded: 'ProxyPulse loaded successfully ✅',
     // 右键菜单
     ctx_use: 'Use Proxy', ctx_del: 'Delete', ctx_copy: 'Copy Address',
+    ctx_excl: 'Exclude Proxy', ctx_unexcl: 'Remove Exclusion',
     // 弹窗
     done_fmt: 'Done! Working: ',
     done_total: ' / Total: ',
     fmt_choose: 'Choose format (txt/csv/json):',
     fmt_txt: 'txt',
+    // 排除功能
+    excl_sel: 'Exclude Selected', excl_clr: 'Clear Exclusions',
+    no_sel: 'Please select proxies first',
+    texcl: 'Excluded ', tunexcl: 'Unexcluded ',
+    excl_cnt: ' excluded',
+    excl_cleared: 'Exclusion list cleared',
+    cclear_excl: 'Clear all exclusions?',
     // 其他
     no_proxy: 'No available proxy',
     empty_pool: 'Empty pool',
@@ -137,6 +171,24 @@ const T = {
     import_fail: 'Import failed',
     ms: 'ms', sec_hint: 's',
     port_info: 'SOCKS5:1800 / HTTP:1801',
+    // Auth
+    auth_setup_title: 'Set Dashboard Password', auth_setup_sub: 'First run: set a password to protect your dashboard.',
+    auth_login_title: 'Login', auth_login_sub: 'Enter your password to access ProxyPulse.',
+    auth_pw_label: 'Password', auth_confirm_label: 'Confirm Password', auth_btn_setup: 'Set Password',
+    auth_btn_login: 'Login', auth_err_short: 'Password must be at least 6 characters', auth_err_mismatch: 'Passwords do not match',
+    auth_err_wrong: 'Incorrect password', auth_logout: 'Logout',
+    // Settings
+    settings_title: 'Settings', settings_general: 'General', settings_auth: 'Dashboard Auth',
+    settings_proxy_auth: 'Local Proxy Auth', settings_threads: 'Validation Threads', settings_fail_thr: 'Failure Threshold',
+    settings_auth_enable: 'Enable Password Protection', settings_cur_pw: 'Current Password', settings_new_pw: 'New Password (blank = no change)',
+    settings_cfm_pw: 'Confirm New Password', settings_proxy_auth_enable: 'Enable Proxy Auth', settings_proxy_user: 'Username',
+    settings_proxy_pw: 'Password (blank = no change)', settings_cancel: 'Cancel', settings_save: 'Save',
+    settings_saved: 'Settings saved', settings_pw_changed: 'Password updated, please login again',
+    settings_err_cur_pw: 'Current password is incorrect', settings_err_short: 'Password must be at least 6 characters',
+    settings_err_mismatch: 'Passwords do not match',
+    // Pool restore
+    pool_restored: 'Proxy pool restored: ',
+    pool_task_resumed: 'Task is running, resuming listener...',
   }
 };
 
@@ -158,6 +210,7 @@ function applyT() {
   setTxt('lbFetch', d.fch); setTxt('lbImport', d.imp);
   setTxt('lbCancel', d.can); setTxt('lbClear', d.clr);
   setTxt('lbRetest', d.ret); setTxt('lbExport', d.exp);
+  setTxt('lbExclSel', d.excl_sel); setTxt('lbExclClr', d.excl_clr);
   setTxt('lbStartSrv', d.ssrv);
   // 过滤区
   setTxt('lblEliteOnly', d.el);
@@ -193,8 +246,11 @@ function applyT() {
   // 右键菜单
   var ctxItems = $('ctxMenu') ? $('ctxMenu').querySelectorAll('.ci span') : [];
   if (ctxItems.length >= 3) { ctxItems[0].textContent = d.ctx_use; ctxItems[1].textContent = d.ctx_del; ctxItems[2].textContent = d.ctx_copy; }
+  // 排除上下文菜单标签（动态，showCtx时更新）
   // Help Modal
   renderHelp();
+  // Settings Modal
+  applySettingsT();
 }
 
 // 安全设置文本
@@ -219,7 +275,7 @@ function toggleTheme() {
 }
 
 // State
-var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', sdesc: true, cancel: { cancelled: false }, settings: {} };
+var S = { proxies: [], dSet: new Set(), running: false, server: false, autoRot: false, autoTimer: null, selAddr: null, scol: 'score', sdesc: true, cancel: { cancelled: false }, settings: {}, excludedSet: new Set(), selectedSet: new Set() };
 
 // API
 async function api(p, m, b) {
@@ -227,7 +283,10 @@ async function api(p, m, b) {
   try {
     var o = { method: m, headers: { 'Content-Type': 'application/json' } };
     if (b) o.body = JSON.stringify(b);
-    return await (await fetch('/api' + p, o)).json();
+    var resp = await fetch('/api' + p, o);
+    if (resp.status === 401) { checkAuth(); return null; }
+    if (!resp.ok && resp.status >= 400) { try { return await resp.json(); } catch(e) { return null; } }
+    return await resp.json();
   } catch (e) { log('API Error: ' + e.message, 'er'); return null; }
  }
 
@@ -274,6 +333,8 @@ function updBtns() {
   ['btnRetest','btnExport','btnServer','btnRotate','btnAutoRotate'].forEach(function(id) {
     var el = $(id); if (el) el.disabled = S.running || !ha;
   });
+  var bxs = $('btnExclSel');
+  if (bxs) bxs.disabled = S.selectedSet.size === 0;
   var sb = $('btnServer'), si = $('bsIcon');
   if (sb) {
     if (S.server) {
@@ -352,26 +413,45 @@ function refreshTable() {
     if (emp) emp.style.display = 'none';
     fl.forEach(function(p) {
       if (!tb) return;
-      var tr = document.createElement('tr');
-      if (p.status !== 'Working') tr.className = 'unavail';
+      var row = document.createElement('tr');
+      var isExcl = S.excludedSet.has(p.proxy);
+      var isSel = S.selectedSet.has(p.proxy);
+      var cls = [];
+      if (p.status !== 'Working') cls.push('unavail');
+      if (isExcl) cls.push('excluded');
+      if (isSel) cls.push('row-sel');
+      row.className = cls.join(' ');
       var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
       var lt = p.status === 'Working' && p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
       var sp = p.status === 'Working' ? (p.speed || 0).toFixed(2) : '-';
       var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
       var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
-      tr.innerHTML =
+      row.innerHTML =
+        '<td class="chk-cell"><input type="checkbox" ' + (isSel ? 'checked' : '') + '></td>' +
         '<td style="font-weight:700;color:' + (p.status === 'Working' ? 'var(--accent)' : 'var(--t3)') + '">' + sc + '</td>' +
         '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
         '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
         '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:' + (p.status === 'Working' ? 'var(--ok)' : '') + '">' + esc(p.proxy) + '</td>' +
         '<td>' + lt + '</td><td>' + sp + '</td>' +
         '<td>' + esc(p.location || '-') + '</td>';
-      tr.dataset.addr = p.proxy;
-      tr.ondblclick = function() { copySingle(p.proxy); };
-      tr.oncontextmenu = function(e) { showCtx(e, p.proxy); };
-      tb.appendChild(tr);
+      row.dataset.addr = p.proxy;
+      var cb = row.querySelector('input[type=checkbox]');
+      if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
+      row.ondblclick = function() { copySingle(p.proxy); };
+      row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
+      tb.appendChild(row);
     });
   }
+  // 更新全选框状态
+  var chkAll = $('chkAll');
+  if (chkAll) {
+    var visAddrs = fl.map(function(p){return p.proxy;});
+    var allSel = visAddrs.length > 0 && visAddrs.every(function(a){return S.selectedSet.has(a);});
+    chkAll.checked = allSel;
+    chkAll.indeterminate = !allSel && visAddrs.some(function(a){return S.selectedSet.has(a);});
+  }
+  // 更新排除徽标
+  updExclBadge();
   upRegion();
   updBtns();
 }
@@ -412,6 +492,8 @@ function showCtx(e, a) {
   m.style.top = e.pageY + 'px';
   var items = m.querySelectorAll('.ci span');
   if (items.length >= 3) { items[0].textContent = tr('ctx_use'); items[1].textContent = tr('ctx_del'); items[2].textContent = tr('ctx_copy'); }
+  var exclLbl = $('ctxExcludeLbl');
+  if (exclLbl) exclLbl.textContent = S.excludedSet.has(a) ? tr('ctx_unexcl') : tr('ctx_excl');
 }
 document.addEventListener('click', function() { var m = $('ctxMenu'); if (m) m.style.display = 'none'; });
 
@@ -439,6 +521,104 @@ function delSelProxy() {
 }
 function copyAddr() { if(!S.selAddr)return; navigator.clipboard.writeText(S.selAddr); showToast(tr('tcop')+S.selAddr,'ok'); }
 function copySingle(a) { navigator.clipboard.writeText(a); showToast(tr('tcop')+a,'ok'); }
+
+// 排除功能
+function toggleRowSel(e, addr) {
+  e.stopPropagation();
+  if (S.selectedSet.has(addr)) S.selectedSet.delete(addr);
+  else S.selectedSet.add(addr);
+  var row = e.target.closest('tr');
+  if (row) {
+    if (S.selectedSet.has(addr)) row.classList.add('row-sel');
+    else row.classList.remove('row-sel');
+  }
+  // 更新全选框
+  var chkAll = $('chkAll');
+  if (chkAll) {
+    var tb = $('tblBody');
+    var visAddrs = tb ? Array.from(tb.querySelectorAll('tr')).map(function(r){return r.dataset.addr;}).filter(Boolean) : [];
+    var allSel = visAddrs.length > 0 && visAddrs.every(function(a){return S.selectedSet.has(a);});
+    chkAll.checked = allSel;
+    chkAll.indeterminate = !allSel && visAddrs.some(function(a){return S.selectedSet.has(a);});
+  }
+  updBtns();
+}
+
+function toggleSelectAll(chk) {
+  var tb = $('tblBody');
+  if (!tb) return;
+  var rows = tb.querySelectorAll('tr');
+  rows.forEach(function(row) {
+    var addr = row.dataset.addr;
+    if (!addr) return;
+    if (chk.checked) {
+      S.selectedSet.add(addr);
+      row.classList.add('row-sel');
+    } else {
+      S.selectedSet.delete(addr);
+      row.classList.remove('row-sel');
+    }
+    var cb = row.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = chk.checked;
+  });
+  updBtns();
+}
+
+async function toggleExcludeSelProxy() {
+  if (!S.selAddr) return;
+  var addr = S.selAddr;
+  if (S.excludedSet.has(addr)) {
+    await api('/proxy/exclusions/remove', 'POST', { proxies: [addr] });
+    S.excludedSet.delete(addr);
+    showToast(tr('tunexcl') + addr, 'in');
+  } else {
+    await api('/proxy/exclusions/add', 'POST', { proxies: [addr] });
+    S.excludedSet.add(addr);
+    showToast(tr('texcl') + addr, 'wa');
+  }
+  refreshTable();
+}
+
+async function excludeSelected() {
+  if (S.selectedSet.size === 0) { showToast(tr('no_sel'), 'wa'); return; }
+  var addrs = [...S.selectedSet];
+  var toExcl = addrs.filter(function(a){ return !S.excludedSet.has(a); });
+  var toUnexcl = addrs.filter(function(a){ return S.excludedSet.has(a); });
+  if (toExcl.length) {
+    await api('/proxy/exclusions/add', 'POST', { proxies: toExcl });
+    toExcl.forEach(function(a){ S.excludedSet.add(a); });
+  }
+  if (toUnexcl.length) {
+    await api('/proxy/exclusions/remove', 'POST', { proxies: toUnexcl });
+    toUnexcl.forEach(function(a){ S.excludedSet.delete(a); });
+  }
+  S.selectedSet.clear();
+  var msg = toExcl.length ? tr('texcl') + toExcl.length : '';
+  if (toUnexcl.length) msg += (msg ? ' / ' : '') + tr('tunexcl') + toUnexcl.length;
+  showToast(msg, 'in');
+  refreshTable();
+}
+
+async function clearExclusions() {
+  if (S.excludedSet.size === 0) return;
+  if (!confirm(tr('cclear_excl'))) return;
+  await api('/proxy/exclusions/clear', 'POST');
+  S.excludedSet.clear();
+  showToast(tr('excl_cleared'), 'in');
+  refreshTable();
+}
+
+function updExclBadge() {
+  var badge = $('exclBadge');
+  if (!badge) return;
+  var cnt = S.excludedSet.size;
+  if (cnt > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = cnt + ' ' + tr('excl_cnt');
+  } else {
+    badge.style.display = 'none';
+  }
+}
 
 // Core Actions
 async function startFetch() {
@@ -488,26 +668,29 @@ function appendProxyRow(p) {
   var tb = $('tblBody'), emp = $('emptySt');
   if (!tb) return;
   if (emp) emp.style.display = 'none';
-  var tr = document.createElement('tr');
-  tr.className = 'row-new';
+  var row = document.createElement('tr');
+  row.className = 'row-new';
   var sc = p.score != null ? p.score.toFixed(1) : 'N/A';
   var lt = p.latency != null ? (p.latency * 1000).toFixed(1) : '-';
   var sp = (p.speed || 0).toFixed(2);
   var pc = p.protocol === 'HTTP' ? 'tag-http' : p.protocol === 'SOCKS5' ? 'tag-s5' : 'tag-s4';
   var ac = p.anonymity === 'Elite' ? 'tag-el' : p.anonymity === 'Anonymous' ? 'tag-an' : 'tag-tr';
-  tr.innerHTML =
+  row.innerHTML =
+    '<td class="chk-cell"><input type="checkbox"></td>' +
     '<td style="font-weight:700;color:var(--accent)">' + sc + '</td>' +
     '<td><span class="' + ac + '">' + trAnon(p.anonymity) + '</span></td>' +
     '<td><span class="' + pc + '">' + esc(p.protocol || '-') + '</span></td>' +
     '<td style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:var(--ok)">' + esc(p.proxy) + '</td>' +
     '<td>' + lt + '</td><td>' + sp + '</td>' +
     '<td>' + esc(p.location || '-') + '</td>';
-  tr.dataset.addr = p.proxy;
-  tr.ondblclick = function() { copySingle(p.proxy); };
-  tr.oncontextmenu = function(e) { showCtx(e, p.proxy); };
-  tb.insertBefore(tr, tb.firstChild);
+  row.dataset.addr = p.proxy;
+  var cb = row.querySelector('input[type=checkbox]');
+  if (cb) { (function(addr){ cb.onclick = function(e){ toggleRowSel(e, addr); }; })(p.proxy); }
+  row.ondblclick = function() { copySingle(p.proxy); };
+  row.oncontextmenu = function(e) { showCtx(e, p.proxy); };
+  tb.insertBefore(row, tb.firstChild);
   // 动画结束后移除class
-  setTimeout(function(){ tr.classList.remove('row-new'); }, 600);
+  setTimeout(function(){ row.classList.remove('row-new'); }, 600);
   upRegion();
 }
 
@@ -571,7 +754,7 @@ async function clearAll() {
   if(S.running){showToast(tr('wait_task'),'wa');return;}
   if(!confirm(tr('cclear')))return;
   await api('/proxy/clear','POST');
-  S.proxies=[];S.dSet.clear();stopAutoRot();refreshTable();
+  S.proxies=[];S.dSet.clear();S.selectedSet.clear();stopAutoRot();refreshTable();
   log(tr('log_cleared'),'wa');
   showToast(tr('tclr'),'in');
 }
@@ -726,7 +909,166 @@ function renderHelp(){
   lucide.createIcons({root:hb,attrs:{strokeWidth:1.5}});
 }
 
+// ==================== Auth ====================
+var authMode = 'login'; // 'setup' | 'login'
+
+async function checkAuth() {
+  var res = await fetch('/api/auth/status').then(function(r){return r.json();}).catch(function(){return null;});
+  if (!res) return;
+  if (!res.authenticated) {
+    authMode = res.hasPassword ? 'login' : 'setup';
+    showAuthOverlay(authMode);
+  } else {
+    var ov = $('authOverlay'); if (ov) ov.classList.remove('act');
+  }
+}
+
+function showAuthOverlay(mode) {
+  authMode = mode;
+  var ov = $('authOverlay');
+  if (!ov) return;
+  ov.classList.add('act');
+  var isSetup = mode === 'setup';
+  setTxt('authTitle', isSetup ? tr('auth_setup_title') : tr('auth_login_title'));
+  setTxt('authSub', isSetup ? tr('auth_setup_sub') : tr('auth_login_sub'));
+  setTxt('authPwLabel', tr('auth_pw_label'));
+  setTxt('authConfirmLabel', tr('auth_confirm_label'));
+  setTxt('authBtn', isSetup ? tr('auth_btn_setup') : tr('auth_btn_login'));
+  var cf = $('authConfirmField'); if (cf) cf.style.display = isSetup ? '' : 'none';
+  var err = $('authErr'); if (err) err.textContent = '';
+  var pw = $('authPw'); if (pw) { pw.value = ''; pw.focus(); }
+  var cpw = $('authConfirmPw'); if (cpw) cpw.value = '';
+}
+
+async function submitAuth(e) {
+  if (e) e.preventDefault();
+  var pw = $('authPw') ? $('authPw').value : '';
+  var err = $('authErr');
+  if (err) err.textContent = '';
+  if (!pw || pw.length < 6) { if (err) err.textContent = tr('auth_err_short'); return; }
+  if (authMode === 'setup') {
+    var cpw = $('authConfirmPw') ? $('authConfirmPw').value : '';
+    if (pw !== cpw) { if (err) err.textContent = tr('auth_err_mismatch'); return; }
+    var res = await fetch('/api/auth/setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})}).then(function(r){return r.json();}).catch(function(){return null;});
+    if (res && res.success) { var ov=$('authOverlay');if(ov)ov.classList.remove('act'); }
+    else if (res && res.error) { if (err) err.textContent = res.error; }
+  } else {
+    var res2 = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})}).then(function(r){return r.json();}).catch(function(){return null;});
+    if (res2 && res2.success) { var ov2=$('authOverlay');if(ov2)ov2.classList.remove('act'); }
+    else { if (err) err.textContent = tr('auth_err_wrong'); }
+  }
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  showAuthOverlay('login');
+}
+
+// ==================== Settings Modal ====================
+function openSettings() {
+  api('/settings/get').then(function(res) {
+    if (!res || !res.settings) return;
+    var s = res.settings;
+    if (s.general) {
+      var th = $('stThreads'); if (th) th.value = s.general.validationThreads || 100;
+      var ft = $('stFailThr'); if (ft) ft.value = s.general.failureThreshold || 3;
+    }
+    if (s.proxyAuth) {
+      var pe = $('stProxyAuthEnabled'); if (pe) pe.checked = !!s.proxyAuth.enabled;
+      var pu = $('stProxyUser'); if (pu) pu.value = s.proxyAuth.username || '';
+      toggleProxyAuthFields();
+    }
+    var spw = $('stCurPw'); if (spw) spw.value = '';
+    var npw = $('stNewPw'); if (npw) npw.value = '';
+    var cpw = $('stCfmPw'); if (cpw) cpw.value = '';
+    var ppw = $('stProxyPw'); if (ppw) ppw.value = '';
+    var se = $('settingsErr'); if (se) se.textContent = '';
+  });
+  applySettingsT();
+  var m = $('settingsModal'); if (m) m.classList.add('act');
+}
+
+function closeSettings() { var m = $('settingsModal'); if (m) m.classList.remove('act'); }
+
+function toggleProxyAuthFields() {
+  var cb = $('stProxyAuthEnabled'), f = $('stProxyAuthFields');
+  if (f) f.style.display = (cb && cb.checked) ? '' : 'none';
+}
+
+function applySettingsT() {
+  var d = T[lang];
+  setTxt('lblSettingsTitle', d.settings_title);
+  setTxt('lblSettingsGeneral', d.settings_general);
+  setTxt('lblSettingsAuth', d.settings_auth);
+  setTxt('lblSettingsProxyAuth', d.settings_proxy_auth);
+  setTxt('lblThreads', d.settings_threads);
+  setTxt('lblFailThr', d.settings_fail_thr);
+  setTxt('lblCurPw', d.settings_cur_pw);
+  setTxt('lblNewPw', d.settings_new_pw);
+  setTxt('lblCfmPw', d.settings_cfm_pw);
+  setTxt('lblProxyAuthEnable', d.settings_proxy_auth_enable);
+  setTxt('lblProxyUser', d.settings_proxy_user);
+  setTxt('lblProxyPw', d.settings_proxy_pw);
+  setTxt('btnSettingsCancel', d.settings_cancel);
+  setTxt('btnSettingsSave', d.settings_save);
+}
+
+async function saveSettings() {
+  var se = $('settingsErr'); if (se) se.textContent = '';
+  var threads = $('stThreads') ? parseInt($('stThreads').value) || 100 : 100;
+  var failThr = $('stFailThr') ? parseInt($('stFailThr').value) || 3 : 3;
+  var curPw = $('stCurPw') ? $('stCurPw').value : '';
+  var newPw = $('stNewPw') ? $('stNewPw').value : '';
+  var cfmPw = $('stCfmPw') ? $('stCfmPw').value : '';
+  var proxyAuthEnabled = $('stProxyAuthEnabled') ? $('stProxyAuthEnabled').checked : false;
+  var proxyUser = $('stProxyUser') ? $('stProxyUser').value.trim() : 'proxy';
+  var proxyPw = $('stProxyPw') ? $('stProxyPw').value : '';
+
+  // Validate password change fields
+  if (newPw) {
+    if (newPw.length < 6) { if (se) se.textContent = tr('settings_err_short'); return; }
+    if (newPw !== cfmPw) { if (se) se.textContent = tr('settings_err_mismatch'); return; }
+  }
+
+  // Save general + proxyAuth settings
+  var settingsPayload = {
+    general: { validationThreads: threads, failureThreshold: failThr },
+    proxyAuth: { enabled: proxyAuthEnabled, username: proxyUser || 'proxy' }
+  };
+  if (proxyPw) settingsPayload.proxyAuth.password = proxyPw;
+
+  var r1 = await api('/settings/save', 'POST', { settings: settingsPayload });
+  if (!r1) return;
+
+  // Change web auth password if requested
+  if (newPw) {
+    var r2 = await fetch('/api/auth/change-password', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:curPw,newPassword:newPw})}).then(function(r){return r.json();}).catch(function(){return null;});
+    if (!r2 || !r2.success) { if (se) se.textContent = r2 && r2.error ? r2.error : tr('settings_err_cur_pw'); return; }
+    closeSettings();
+    showToast(tr('settings_pw_changed'), 'wa');
+    showAuthOverlay('login');
+    return;
+  }
+
+  S.settings.general = { validationThreads: threads, failureThreshold: failThr };
+  closeSettings();
+  showToast(tr('settings_saved'), 'ok');
+}
+
 // Init
+function loadProxiesIntoTable(proxies) {
+  if (!proxies || !proxies.length) return;
+  for (var i = 0; i < proxies.length; i++) {
+    var p = proxies[i];
+    if (!p || !p.proxy || S.dSet.has(p.proxy)) continue;
+    S.dSet.add(p.proxy);
+    S.proxies.push(p);
+  }
+  refreshTable();
+  updStats();
+  updBtns();
+}
+
 window.onload=function(){
   lucide.createIcons({attrs:{strokeWidth:1.5}});
   if(theme!=='dark')document.documentElement.setAttribute('data-theme',theme);
@@ -734,8 +1076,27 @@ window.onload=function(){
   if(ti&&theme==='light')ti.setAttribute('data-lucide','sun');
   lucide.createIcons({attrs:{strokeWidth:1.5}});
   applyT();
+  checkAuth();
   startLogStream();
   api('/settings/get').then(function(res){if(res&&res.settings)S.settings=res.settings;});
+  api('/proxy/exclusions').then(function(res){if(res&&res.excluded){S.excludedSet=new Set(res.excluded);updExclBadge();}});
+  // Restore proxy pool and task state
+  api('/proxy/list').then(function(res){
+    if(res&&res.proxies&&res.proxies.length){
+      loadProxiesIntoTable(res.proxies);
+      var wc=S.proxies.filter(function(p){return p.status==='Working';}).length;
+      log(tr('pool_restored')+wc+'/'+S.proxies.length,'info');
+      showToast(tr('pool_restored')+wc,'ok');
+    }
+  });
+  api('/status').then(function(res){
+    if(res&&res.isRunningTask&&!S.running){
+      S.running=true; S.cancel.cancelled=false;
+      setBtn(false); showProg(res.progress?res.progress.max:0);
+      log(tr('pool_task_resumed'),'in');
+      pollResults();
+    }
+  });
   log(tr('log_loaded'),'ok');
   log(tr('ltip'),'in');
 };
@@ -743,3 +1104,5 @@ window.onload=function(){
 // Close modal on overlay click
 var hm=$('helpModal');
 if(hm)hm.addEventListener('click',function(e){if(e.target===this)closeHelp();});
+var sm=$('settingsModal');
+if(sm)sm.addEventListener('click',function(e){if(e.target===this)closeSettings();});
